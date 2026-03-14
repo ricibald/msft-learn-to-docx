@@ -10,11 +10,11 @@ public sealed class PandocRunner
     /// <summary>
     /// Converts a markdown file to DOCX using pandoc.
     /// </summary>
-    public void Convert(string markdownPath, string outputPath, string? templatePath)
+    public void Convert(string markdownPath, string outputPath, string? templatePath, int tocDepth = 3)
     {
         var pandocPath = FindPandoc();
 
-        var args = $"\"{markdownPath}\" -o \"{outputPath}\" --from=markdown --to=docx --wrap=none --toc --toc-depth=3";
+        var args = $"\"{markdownPath}\" -o \"{outputPath}\" --from=markdown --to=docx --wrap=none --toc --toc-depth={tocDepth}";
 
         if (!string.IsNullOrWhiteSpace(templatePath))
         {

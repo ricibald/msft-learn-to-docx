@@ -12,7 +12,7 @@
 5. For each unit: download markdown from includes/ + download media from media/
 6. DFM → standard Markdown conversion (regex-based)
 7. Merge all contents into single markdown with YAML frontmatter (`title`, `date`) for Word cover page
-8. Every unit becomes an H1 section; content headings start at H2
+8. Module title = H1, Unit title = H2, content headings = H3+
 9. pandoc → DOCX
 
 ### Known Structural Exceptions in the MicrosoftDocs/learn Repo
@@ -27,25 +27,30 @@
 - `LearnCatalogClient`: `https://learn.microsoft.com/api/catalog/?uid=...&type=modules` — no authentication required
 - `ModuleResolver`: heuristic parent dir (from uid prefix) + fallback full scan of learn-pr/
 - `DfmConverter`: regex-based, converts :::image:::, [!NOTE], [!div], :::zone:::, [!VIDEO], :::code:::, etc.
-- `MarkdownMerger`: YAML frontmatter generation + heading normalization (every unit = H1, content = H2+)
+- `MarkdownMerger`: YAML frontmatter generation + heading normalization (Module = H1, Unit = H2, content = H3+)
 - `ContentDownloader`: orchestrates download of paths/modules/units/media
-- `PandocRunner`: invokes pandoc with `--toc`, `--reference-doc`, `--resource-path`
+- `PandocRunner`: invokes pandoc with `--toc`, `--toc-depth`, `--reference-doc`, `--resource-path`
+- `CachingHandler`: file-based HTTP cache (24h TTL), caches 200 OK only, SHA256 hashed URLs as keys
 
 ### Multi-URL Support
 - CLI accepts multiple positional URL arguments
 - Each URL is downloaded independently (path or module)
 - All `DownloadedContent` objects are merged into a single markdown + DOCX
 - `--title` flag overrides the auto-derived document title
+- `--output` / `-o` overrides the auto-generated output directory
+- `--format` / `-f` selects output format: `docx` (default) or `md` (markdown only, no pandoc required)
 
 ### Heading Hierarchy
-- Every unit is H1 (flat structure for clean Word sections)
-- Content headings within each unit are shifted so minimum = H2
+- Module title = H1
+- Unit title = H2
+- Content headings within each unit are shifted so minimum = H3
 - YAML frontmatter (`title`, `date`) renders as pandoc title block (Word cover page)
 
 ### Docker
 - Multi-stage Dockerfile: SDK build → alpine runtime + pandoc
+- Docker Compose for convenience (`docker-compose.yml`)
 - Output directory defaults to `/output` (Docker VOLUME)
-- `GITHUB_TOKEN` passed via `-e` flag
+- `GITHUB_TOKEN` passed via `-e` flag or `.env`
 
 ### Dependencies
 - `YamlDotNet` for YAML parsing

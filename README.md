@@ -6,6 +6,7 @@
 
 - [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
 - [pandoc](https://pandoc.org/installing.html) in system PATH
+- [rsvg-convert](https://wiki.gnome.org/Projects/LibRsvg) (optional, for SVG images in DOCX) — `apt install librsvg2-bin` on Debian/Ubuntu, `brew install librsvg` on macOS, `choco install rsvg-convert` on Windows
 - (Optional) `GITHUB_TOKEN` environment variable for higher GitHub API rate limits
 
 ## Usage
@@ -18,10 +19,16 @@ dotnet run -- "https://learn.microsoft.com/en-us/training/paths/copilot/"
 dotnet run -- "https://learn.microsoft.com/en-us/training/modules/introduction-to-github-copilot/"
 
 # Multiple URLs merged into one document
-dotnet run -- "https://learn.microsoft.com/.../paths/copilot/" "https://learn.microsoft.com/.../modules/mod/"
+dotnet run -- "https://learn.microsoft.com/en-us/training/paths/copilot/" "https://learn.microsoft.com/en-us/training/paths/gh-copilot-2/"
 
 # With custom title and DOCX template
 dotnet run -- "https://learn.microsoft.com/.../paths/copilot/" --title "GitHub Copilot Guide" --template custom.docx
+
+# Markdown only (no pandoc required)
+dotnet run -- "https://learn.microsoft.com/.../paths/copilot/" --format md
+
+# Custom output directory
+dotnet run -- "https://learn.microsoft.com/.../paths/copilot/" -o ./my-output
 
 # Help
 dotnet run -- --help
@@ -56,6 +63,13 @@ docker pull <your-dockerhub-user>/msft-learn-to-docx
 docker run --rm -v "$(pwd)/output:/output" <your-dockerhub-user>/msft-learn-to-docx "<url>"
 ```
 
+#### Docker Compose
+
+```bash
+# Run with docker compose
+docker compose run msft-learn-to-docx "https://learn.microsoft.com/.../paths/copilot/" --title "My Guide"
+```
+
 ## Output
 
 Generated files are saved under `output/{slug}_{timestamp}/`:
@@ -69,7 +83,10 @@ output/copilot_20260314-120000/
 
 ### Heading Hierarchy
 
-Every unit is rendered as a top-level section (H1). Content headings within each unit start at H2. The YAML frontmatter block (`title`, `date`) is used by pandoc to generate a Word cover page.
+- Module title = H1
+- Unit title = H2
+- Content headings within each unit = H3+
+- YAML frontmatter block (`title`, `date`) is used by pandoc to generate a Word cover page
 
 ### DOCX Template
 
@@ -139,6 +156,7 @@ Handled Docs-Flavored Markdown syntax:
 ├── Program.cs                  # Entry point and orchestration
 ├── Dockerfile                  # Multi-stage Docker build (SDK → runtime + pandoc)
 ├── .dockerignore               # Docker build exclusions
+├── docker-compose.yml          # Docker Compose convenience config
 ├── Models/
 │   └── LearnModels.cs          # YAML, Catalog API, and downloaded content models
 ├── Services/
@@ -149,7 +167,8 @@ Handled Docs-Flavored Markdown syntax:
 │   ├── DfmConverter.cs         # DFM → standard Markdown
 │   ├── MarkdownMerger.cs       # Merge + YAML frontmatter + heading normalization
 │   ├── PandocRunner.cs         # pandoc → DOCX conversion (with TOC)
-│   └── RetryHandler.cs         # HTTP retry with exponential backoff
+│   ├── RetryHandler.cs         # HTTP retry with exponential backoff
+│   └── CachingHandler.cs       # HTTP response cache (24h TTL, file-based)
 └── Templates/
     └── template.docx           # Default pandoc reference-doc template
 ```
@@ -165,3 +184,12 @@ Handled Docs-Flavored Markdown syntax:
 - HTTP 429 (Too Many Requests) respecting the `Retry-After` header
 - HTTP 5xx / timeouts with exponential backoff (2s, 4s, 8s)
 - Network errors with 3 automatic retries
+
+## HTTP Caching
+
+`CachingHandler` (DelegatingHandler) caches all successful (200 OK) GET responses to disk with a 24-hour TTL.
+
+- Cache location: `%LOCALAPPDATA%/MsftLearnToDocx/cache/` (Windows) or `~/.local/share/MsftLearnToDocx/cache/` (Linux/macOS)
+- Only 200 OK responses are cached; 404 and errors are never cached
+- Repeated runs for the same content reuse cached data, avoiding redundant API calls
+- To clear the cache, delete the cache directory

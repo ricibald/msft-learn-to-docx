@@ -15,6 +15,7 @@ string? templatePath = null;
 string? title = null;
 string? outputPath = null;
 string format = "docx";
+int tocDepth = 3;
 
 for (var i = 0; i < args.Length; i++)
 {
@@ -33,6 +34,11 @@ for (var i = 0; i < args.Length; i++)
             format = args[++i].ToLowerInvariant();
             if (format is not ("docx" or "md"))
                 throw new ArgumentException($"Unsupported format '{format}'. Supported: docx, md");
+            break;
+        case "--toc-depth" when i + 1 < args.Length:
+            tocDepth = int.Parse(args[++i]);
+            if (tocDepth is < 1 or > 6)
+                throw new ArgumentException("--toc-depth must be between 1 and 6");
             break;
         case "--help" or "-h":
             PrintUsage();
@@ -127,7 +133,7 @@ Console.WriteLine($"  Markdown: {mdPath}");
 if (format == "docx")
 {
     var docxPath = Path.Combine(outputDir, $"{firstSlug}.docx");
-    pandoc.Convert(mdPath, docxPath, templatePath);
+    pandoc.Convert(mdPath, docxPath, templatePath, tocDepth);
     Console.WriteLine($"  Word:     {docxPath}");
 }
 
@@ -152,7 +158,13 @@ static (string type, string slug) ParseLearnUrl(string url)
 
 static HttpClient CreateHttpClient()
 {
-    var client = new HttpClient(new RetryHandler());
+    // Handler pipeline: CachingHandler → RetryHandler → HttpClientHandler
+    var cacheDir = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "MsftLearnToDocx", "cache");
+    var handler = new CachingHandler(new RetryHandler(), cacheDir, TimeSpan.FromHours(24));
+
+    var client = new HttpClient(handler);
     client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("MsftLearnToDocx", "1.0"));
     client.Timeout = TimeSpan.FromSeconds(30);
 
@@ -193,6 +205,7 @@ static void PrintUsage()
                                   Default: Templates/template.docx (if exists).
           --output, -o <dir>      Output directory. Default: output/{slug}_{timestamp}/.
           --format, -f <fmt>      Output format: "docx" (default) or "md" (markdown only, no pandoc).
+          --toc-depth <n>         Table of contents depth for DOCX (1-6). Default: 3.
           --help, -h              Show this help.
 
         Environment Variables:

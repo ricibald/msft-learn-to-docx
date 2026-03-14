@@ -6,14 +6,14 @@ namespace MsftLearnToDocx.Services;
 
 /// <summary>
 /// Merges downloaded units into a single markdown document.
-/// Each unit starts at heading level 1; content headings are shifted to H2+.
+/// Heading hierarchy: Module = H1, Unit = H2, content headings = H3+.
 /// </summary>
 public sealed partial class MarkdownMerger
 {
     /// <summary>
     /// Merges multiple <see cref="DownloadedContent"/> blocks into a single markdown string
-    /// with an optional YAML frontmatter cover page.
-    /// Every unit is a top-level section (H1). Content headings start at H2.
+    /// with YAML frontmatter (title, date) for Word cover page.
+    /// Heading hierarchy: Module = H1, Unit = H2, content headings = H3+.
     /// </summary>
     public string Merge(IReadOnlyList<DownloadedContent> contents, string? documentTitle = null, DateTime? date = null)
     {
@@ -34,16 +34,20 @@ public sealed partial class MarkdownMerger
         {
             foreach (var module in content.Modules)
             {
+                // Module title = H1
+                sb.AppendLine($"# {module.Title}");
+                sb.AppendLine();
+
                 foreach (var unit in module.Units)
                 {
-                    // Each unit is H1
-                    sb.AppendLine($"# {unit.Title}");
+                    // Unit title = H2
+                    sb.AppendLine($"## {unit.Title}");
                     sb.AppendLine();
 
                     if (!string.IsNullOrWhiteSpace(unit.MarkdownContent))
                     {
-                        // Shift content headings so minimum becomes H2
-                        var adjustedContent = AdjustHeadingLevels(unit.MarkdownContent, 2);
+                        // Shift content headings so minimum becomes H3
+                        var adjustedContent = AdjustHeadingLevels(unit.MarkdownContent, 3);
                         sb.AppendLine(adjustedContent.Trim());
                         sb.AppendLine();
                     }
