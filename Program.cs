@@ -10,8 +10,11 @@ if (args.Length == 0)
     return 1;
 }
 
-string? inputUrl = null;
+var inputUrls = new List<string>();
 string? templatePath = null;
+string? title = null;
+string? outputPath = null;
+string format = "docx";
 
 for (var i = 0; i < args.Length; i++)
 {
@@ -20,29 +23,42 @@ for (var i = 0; i < args.Length; i++)
         case "--template" or "-t" when i + 1 < args.Length:
             templatePath = args[++i];
             break;
+        case "--title" when i + 1 < args.Length:
+            title = args[++i];
+            break;
+        case "--output" or "-o" when i + 1 < args.Length:
+            outputPath = args[++i];
+            break;
+        case "--format" or "-f" when i + 1 < args.Length:
+            format = args[++i].ToLowerInvariant();
+            if (format is not ("docx" or "md"))
+                throw new ArgumentException($"Unsupported format '{format}'. Supported: docx, md");
+            break;
         case "--help" or "-h":
             PrintUsage();
             return 0;
         default:
-            if (inputUrl is null && !args[i].StartsWith('-'))
-                inputUrl = args[i];
+            if (!args[i].StartsWith('-'))
+                inputUrls.Add(args[i]);
             break;
     }
 }
 
-if (string.IsNullOrWhiteSpace(inputUrl))
+if (inputUrls.Count == 0)
 {
     Console.Error.WriteLine("Error: No URL provided.");
     PrintUsage();
     return 1;
 }
 
-// --- Parse URL ---
-var (contentType, slug) = ParseLearnUrl(inputUrl);
-Console.WriteLine($"Type: {contentType}, Slug: {slug}");
+// --- Parse all URLs ---
+var parsedUrls = inputUrls.Select(ParseLearnUrl).ToList();
+foreach (var (type, slug) in parsedUrls)
+    Console.WriteLine($"  Input: {type}/{slug}");
 
-// --- Verify pandoc ---
-PandocRunner.FindPandoc();
+// --- Verify pandoc (skip when markdown-only) ---
+if (format == "docx")
+    PandocRunner.FindPandoc();
 
 // --- Create HTTP client ---
 using var httpClient = CreateHttpClient();
@@ -56,9 +72,10 @@ var downloader = new ContentDownloader(githubClient, resolver, dfmConverter);
 var merger = new MarkdownMerger();
 var pandoc = new PandocRunner();
 
-// --- Create output directory (unique per run) ---
+// --- Create output directory ---
+var firstSlug = parsedUrls[0].slug;
 var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
-var outputDir = Path.Combine(Directory.GetCurrentDirectory(), "output", $"{slug}_{timestamp}");
+var outputDir = outputPath ?? Path.Combine(Directory.GetCurrentDirectory(), "output", $"{firstSlug}_{timestamp}");
 Directory.CreateDirectory(outputDir);
 
 // --- Resolve template (default: Templates/template.docx) ---
@@ -76,31 +93,43 @@ else
     Console.WriteLine($"Using template: {templatePath}");
 }
 
-// --- Download content ---
-DownloadedContent content;
+// --- Download content for all URLs ---
+var allContents = new List<DownloadedContent>();
 
-if (contentType == "paths")
+foreach (var (contentType, slug) in parsedUrls)
 {
-    content = await downloader.DownloadPathAsync(slug, outputDir);
-}
-else
-{
-    content = await downloader.DownloadModuleBySlugAsync(slug, outputDir);
+    Console.WriteLine($"\n=== Downloading: {contentType}/{slug} ===");
+    DownloadedContent content;
+
+    if (contentType == "paths")
+    {
+        content = await downloader.DownloadPathAsync(slug, outputDir);
+    }
+    else
+    {
+        content = await downloader.DownloadModuleBySlugAsync(slug, outputDir);
+    }
+
+    allContents.Add(content);
 }
 
-// --- Merge markdown ---
+// --- Merge markdown (all contents into a single document) ---
 Console.WriteLine("\nMerging markdown...");
-var mergedMarkdown = merger.Merge(content);
-var mdPath = Path.Combine(outputDir, $"{slug}.md");
+var mergedMarkdown = merger.Merge(allContents, title);
+var mdPath = Path.Combine(outputDir, $"{firstSlug}.md");
 await File.WriteAllTextAsync(mdPath, mergedMarkdown);
 Console.WriteLine($"  Markdown saved: {mdPath}");
 
-// --- Convert to DOCX ---
-var docxPath = Path.Combine(outputDir, $"{slug}.docx");
-pandoc.Convert(mdPath, docxPath, templatePath);
+// --- Convert to DOCX (unless markdown-only) ---
 Console.WriteLine($"\nDone! Output files:");
 Console.WriteLine($"  Markdown: {mdPath}");
-Console.WriteLine($"  Word:     {docxPath}");
+
+if (format == "docx")
+{
+    var docxPath = Path.Combine(outputDir, $"{firstSlug}.docx");
+    pandoc.Convert(mdPath, docxPath, templatePath);
+    Console.WriteLine($"  Word:     {docxPath}");
+}
 
 return 0;
 
@@ -148,23 +177,41 @@ static void PrintUsage()
         MsftLearnToDocx - Convert Microsoft Learn paths/modules to Markdown and DOCX
 
         Usage:
-          MsftLearnToDocx <url> [options]
+          MsftLearnToDocx <url> [<url2> ...] [options]
 
         Arguments:
-          <url>    Microsoft Learn URL for a path or module
+          <url>    One or more Microsoft Learn URLs (paths or modules).
+                   Multiple URLs are merged into a single output document.
                    Examples:
                      https://learn.microsoft.com/en-us/training/paths/copilot/
                      https://learn.microsoft.com/en-us/training/modules/introduction-to-github-copilot/
 
         Options:
-          --template, -t <path>   Path to a DOCX template file for pandoc --reference-doc
-                                  Default: Templates/template.docx (if exists)
-          --help, -h              Show this help
+          --title <text>          Custom document title (used in cover page).
+                                  Default: auto-derived from the learning path/module title(s).
+          --template, -t <path>   Path to a DOCX template file for pandoc --reference-doc.
+                                  Default: Templates/template.docx (if exists).
+          --output, -o <dir>      Output directory. Default: output/{slug}_{timestamp}/.
+          --format, -f <fmt>      Output format: "docx" (default) or "md" (markdown only, no pandoc).
+          --help, -h              Show this help.
 
         Environment Variables:
-          GITHUB_TOKEN            Optional GitHub Personal Access Token for higher API rate limits
+          GITHUB_TOKEN            Optional GitHub Personal Access Token for higher API rate limits.
 
         Prerequisites:
-          pandoc                  Must be installed and in PATH (https://pandoc.org/installing.html)
+          pandoc                  Required for DOCX output (https://pandoc.org/installing.html).
+
+        Examples:
+          # Single learning path
+          MsftLearnToDocx "https://learn.microsoft.com/en-us/training/paths/copilot/"
+
+          # Multiple modules merged into one document
+          MsftLearnToDocx "https://learn.microsoft.com/.../modules/mod1/" "https://learn.microsoft.com/.../modules/mod2/"
+
+          # Markdown only, custom output directory
+          MsftLearnToDocx "https://learn.microsoft.com/.../paths/copilot/" -f md -o ./my-output
+
+          # With custom title and template
+          MsftLearnToDocx "https://learn.microsoft.com/.../paths/copilot/" --title "GitHub Copilot Guide" -t custom.docx
         """);
 }

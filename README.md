@@ -1,131 +1,167 @@
 # MsftLearnToDocx
 
-Console .NET 8 che converte un Microsoft Learn training path o un singolo modulo in un documento Markdown unificato e in un file Word (DOCX) tramite **pandoc**.
+.NET 8 console app that converts Microsoft Learn training paths and modules into a unified Markdown document and a Word (DOCX) file via **pandoc**.
 
-## Prerequisiti
+## Prerequisites
 
 - [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
-- [pandoc](https://pandoc.org/installing.html) nel PATH di sistema
-- (Opzionale) `GITHUB_TOKEN` come variabile d'ambiente per rate limit più alti sull'API GitHub
+- [pandoc](https://pandoc.org/installing.html) in system PATH
+- (Optional) `GITHUB_TOKEN` environment variable for higher GitHub API rate limits
 
-## Utilizzo
+## Usage
 
 ```bash
-# Learning path completo
+# Single learning path
 dotnet run -- "https://learn.microsoft.com/en-us/training/paths/copilot/"
 
-# Singolo modulo
+# Single module
 dotnet run -- "https://learn.microsoft.com/en-us/training/modules/introduction-to-github-copilot/"
 
-# Con template DOCX personalizzato
-dotnet run -- "https://learn.microsoft.com/en-us/training/paths/copilot/" --template template.docx
+# Multiple URLs merged into one document
+dotnet run -- "https://learn.microsoft.com/.../paths/copilot/" "https://learn.microsoft.com/.../modules/mod/"
+
+# With custom title and DOCX template
+dotnet run -- "https://learn.microsoft.com/.../paths/copilot/" --title "GitHub Copilot Guide" --template custom.docx
 
 # Help
 dotnet run -- --help
 ```
 
+### Docker
+
+Build and run without installing .NET or pandoc locally:
+
+```bash
+# Build the image
+docker build -t msft-learn-to-docx .
+
+# Run (output mounted to current directory)
+docker run --rm -v "$(pwd)/output:/output" \
+  -e GITHUB_TOKEN="$GITHUB_TOKEN" \
+  msft-learn-to-docx \
+  "https://learn.microsoft.com/en-us/training/paths/copilot/"
+
+# Multiple URLs with custom title
+docker run --rm -v "$(pwd)/output:/output" \
+  msft-learn-to-docx \
+  "https://learn.microsoft.com/.../paths/copilot/" \
+  "https://learn.microsoft.com/.../modules/mod/" \
+  --title "My Training Guide"
+```
+
+Pre-built image (if published):
+
+```bash
+docker pull <your-dockerhub-user>/msft-learn-to-docx
+docker run --rm -v "$(pwd)/output:/output" <your-dockerhub-user>/msft-learn-to-docx "<url>"
+```
+
 ## Output
 
-I file generati vengono salvati in `output/{slug}_{timestamp}/`:
+Generated files are saved under `output/{slug}_{timestamp}/`:
 
 ```
 output/copilot_20260314-120000/
-├── media/           # Immagini scaricate (prefissate con M{n}_ per modulo)
-├── copilot.md       # Markdown unificato
-└── copilot.docx     # Documento Word (con Table of Contents)
+├── media/           # Downloaded images (prefixed with M{n}_ per module)
+├── copilot.md       # Unified Markdown (with YAML frontmatter cover page)
+└── copilot.docx     # Word document (with Table of Contents)
 ```
 
-### Template DOCX
+### Heading Hierarchy
 
-Il template pandoc viene cercato automaticamente in `Templates/template.docx` nella directory di lavoro. Per usare un template diverso:
+Every unit is rendered as a top-level section (H1). Content headings within each unit start at H2. The YAML frontmatter block (`title`, `date`) is used by pandoc to generate a Word cover page.
+
+### DOCX Template
+
+The pandoc template is auto-detected from `Templates/template.docx` in the working directory. To use a different template:
 
 ```bash
 dotnet run -- "<url>" --template path/to/custom-template.docx
 ```
 
-## Architettura
+## Architecture
 
-### Flusso
+### Data Flow
 
 ```mermaid
 graph TD
-    A[Input URL] --> B{Path o Module?}
-    B -->|Path| C[Download path index.yml da GitHub]
-    B -->|Module| D[Cerca modulo in learn-pr/]
-    C --> E[Per ogni module UID]
-    E --> F[Learn Catalog API → dir name]
-    F --> G[GitHub scan → parent dir]
-    G --> H[Download module index.yml]
-    H --> I[Per ogni unit → download YAML]
-    I --> J{Tipo unit}
-    J -->|Include MD| K[Download markdown da includes/]
-    J -->|Quiz| L[Parse quiz YAML → Markdown]
-    J -->|Vuoto| M[Skip]
-    K --> N[Converti DFM → Standard Markdown]
-    N --> O[Download media]
-    D --> H
-    O --> P[Merge markdown con heading adjustment]
-    L --> P
-    P --> Q[pandoc → DOCX]
+    A[Input URLs] --> B{Parse each URL}
+    B --> C[paths/slug or modules/slug]
+    C -->|Path| D[Download path index.yml from GitHub]
+    C -->|Module| E[Find module in learn-pr/]
+    D --> F[For each module UID]
+    F --> G[Learn Catalog API → dir name]
+    G --> H[GitHub scan → parent dir]
+    H --> I[Download module index.yml]
+    I --> J[For each unit → download YAML]
+    J --> K{Unit type}
+    K -->|Include MD| L[Download markdown from includes/]
+    K -->|Quiz| M[Parse quiz YAML → Markdown]
+    K -->|Empty| N[Skip]
+    L --> O[Convert DFM → Standard Markdown]
+    O --> P[Download media]
+    E --> I
+    P --> Q[Merge all contents with YAML frontmatter]
+    M --> Q
+    Q --> R[pandoc → DOCX]
 ```
 
-### Risoluzione path moduli
+### Module Path Resolution
 
-La corrispondenza tra UID del modulo e percorso GitHub non è deterministica. Eccezioni note:
+The mapping between module UID and GitHub path is non-deterministic. Known exceptions:
 
-| UID | Directory GitHub | Note |
-|-----|-----------------|------|
+| UID | GitHub Directory | Notes |
+|-----|-----------------|-------|
 | `learn.github.copilot-spaces` | `introduction-copilot-spaces` | slug ≠ uid |
-| `learn.github-copilot-with-javascript` | `introduction-copilot-javascript` | slug ≠ uid, nessun provider |
+| `learn.github-copilot-with-javascript` | `introduction-copilot-javascript` | slug ≠ uid, no provider |
 | `learn.wwl.*` | `learn-pr/wwl-azure/` | wwl ≠ wwl-azure |
-| `learn.advanced-github-copilot` | `learn-pr/github/` | nessun provider nel uid |
+| `learn.advanced-github-copilot` | `learn-pr/github/` | no provider in uid |
 
-**Strategia**: Learn Catalog API (`url` field) → directory name reale → GitHub Contents API scan per la parent directory.
+**Strategy**: Learn Catalog API (`url` field) → real directory name → GitHub Contents API scan for parent directory.
 
-### Conversione DFM → Markdown standard
+### DFM → Standard Markdown Conversion
 
-Sintassi Docs-Flavored Markdown gestite:
+Handled Docs-Flavored Markdown syntax:
 
 - `:::image type="content" source="..." alt-text="...":::` → `![alt-text](source)`
-- `> [!NOTE]`, `> [!TIP]`, `> [!WARNING]`, `> [!IMPORTANT]`, `> [!CAUTION]` → blockquote con label bold
-- `> [!div class="nextstepaction"]`, `> [!div class="checklist"]` → rimossi
-- `:::zone target="...":::` / `:::zone-end:::` → rimossi
-- `:::row:::`, `:::column:::` → rimossi
+- `> [!NOTE]`, `> [!TIP]`, `> [!WARNING]`, `> [!IMPORTANT]`, `> [!CAUTION]` → blockquote with bold label
+- `> [!div class="nextstepaction"]`, `> [!div class="checklist"]` → removed
+- `:::zone target="...":::` / `:::zone-end:::` → removed
+- `:::row:::`, `:::column:::` → removed
 - `[!VIDEO url]` → link
-- `:::code language="..." source="...":::` → download sorgente da GitHub, inline con supporto `range`
-- `[!INCLUDE[](path)]` residui → rimossi
+- `:::code language="..." source="...":::` → downloads source from GitHub, inlines with `range` support
+- `[!INCLUDE[](path)]` residuals → removed
 
-### Gerarchia heading nel documento unificato
-
-- **Path mode**: H1=Titolo path, H2=Titolo modulo, H3=Titolo unit, H4+=Contenuto
-- **Module mode**: H1=Titolo modulo, H2=Titolo unit, H3+=Contenuto
-
-## Struttura progetto
+## Project Structure
 
 ```
-├── MsftLearnToDocx.csproj     # Progetto .NET 8
-├── Program.cs                  # Entry point e orchestrazione
+├── MsftLearnToDocx.csproj     # .NET 8 project
+├── Program.cs                  # Entry point and orchestration
+├── Dockerfile                  # Multi-stage Docker build (SDK → runtime + pandoc)
+├── .dockerignore               # Docker build exclusions
 ├── Models/
-│   └── LearnModels.cs          # Modelli YAML, Catalog API, contenuto scaricato
-└── Services/
-    ├── GitHubRawClient.cs      # Download raw content + Contents API
-    ├── LearnCatalogClient.cs   # Microsoft Learn Catalog API
-    ├── ModuleResolver.cs       # UID → GitHub path resolution
-    ├── ContentDownloader.cs    # Orchestrazione download completo
-    ├── DfmConverter.cs         # DFM → standard Markdown
-    ├── MarkdownMerger.cs       # Merge + heading level adjustment
-    ├── PandocRunner.cs         # Conversione pandoc → DOCX (con TOC)
-    └── RetryHandler.cs         # Retry HTTP con exponential backoff
+│   └── LearnModels.cs          # YAML, Catalog API, and downloaded content models
+├── Services/
+│   ├── GitHubRawClient.cs      # Raw content download + Contents API
+│   ├── LearnCatalogClient.cs   # Microsoft Learn Catalog API
+│   ├── ModuleResolver.cs       # UID → GitHub path resolution
+│   ├── ContentDownloader.cs    # Full download orchestration
+│   ├── DfmConverter.cs         # DFM → standard Markdown
+│   ├── MarkdownMerger.cs       # Merge + YAML frontmatter + heading normalization
+│   ├── PandocRunner.cs         # pandoc → DOCX conversion (with TOC)
+│   └── RetryHandler.cs         # HTTP retry with exponential backoff
+└── Templates/
+    └── template.docx           # Default pandoc reference-doc template
 ```
 
-## Dipendenze
+## Dependencies
 
-- [YamlDotNet](https://github.com/aaubry/YamlDotNet) – parsing YAML
-- [pandoc](https://pandoc.org/) – conversione Markdown → DOCX (esterno)
+- [YamlDotNet](https://github.com/aaubry/YamlDotNet) – YAML parsing
+- [pandoc](https://pandoc.org/) – Markdown → DOCX conversion (external)
 
-## Resilienza HTTP
+## HTTP Resilience
 
-`RetryHandler` (DelegatingHandler) gestisce automaticamente:
-- HTTP 429 (Too Many Requests) con rispetto header `Retry-After`
-- HTTP 5xx / timeout con exponential backoff (2s, 4s, 8s)
-- Errori di rete con 3 retry automatici
+`RetryHandler` (DelegatingHandler) automatically handles:
+- HTTP 429 (Too Many Requests) respecting the `Retry-After` header
+- HTTP 5xx / timeouts with exponential backoff (2s, 4s, 8s)
+- Network errors with 3 automatic retries

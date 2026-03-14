@@ -5,54 +5,63 @@ using MsftLearnToDocx.Models;
 namespace MsftLearnToDocx.Services;
 
 /// <summary>
-/// Merges downloaded units into a single markdown document with proper heading hierarchy.
+/// Merges downloaded units into a single markdown document.
+/// Each unit starts at heading level 1; content headings are shifted to H2+.
 /// </summary>
 public sealed partial class MarkdownMerger
 {
     /// <summary>
-    /// Merges all downloaded content into a single markdown string.
-    /// Heading hierarchy:
-    /// - Path mode: H1=Path title, H2=Module title, H3=Unit title, content shifted to H4+
-    /// - Module mode: H1=Module title, H2=Unit title, content shifted to H3+
+    /// Merges multiple <see cref="DownloadedContent"/> blocks into a single markdown string
+    /// with an optional YAML frontmatter cover page.
+    /// Every unit is a top-level section (H1). Content headings start at H2.
     /// </summary>
-    public string Merge(DownloadedContent content)
+    public string Merge(IReadOnlyList<DownloadedContent> contents, string? documentTitle = null, DateTime? date = null)
     {
         var sb = new StringBuilder();
-        var unitHeadingBaseLevel = content.IsPath ? 4 : 3;
-        var unitTitleLevel = content.IsPath ? 3 : 2;
-        var moduleTitleLevel = 2;
 
-        // Document title (H1)
-        sb.AppendLine($"# {content.Title}");
+        // YAML frontmatter for pandoc title block (renders as Word cover page)
+        var title = documentTitle
+            ?? (contents.Count == 1 ? contents[0].Title : string.Join(" / ", contents.Select(c => c.Title)));
+        var dateStr = (date ?? DateTime.Now).ToString("yyyy-MM-dd");
+
+        sb.AppendLine("---");
+        sb.AppendLine($"title: \"{EscapeYaml(title)}\"");
+        sb.AppendLine($"date: {dateStr}");
+        sb.AppendLine("---");
         sb.AppendLine();
 
-        foreach (var module in content.Modules)
+        foreach (var content in contents)
         {
-            // Module title (H2 for paths, skip for single module since H1 is the title)
-            if (content.IsPath)
+            foreach (var module in content.Modules)
             {
-                sb.AppendLine($"{new string('#', moduleTitleLevel)} {module.Title}");
-                sb.AppendLine();
-            }
-
-            foreach (var unit in module.Units)
-            {
-                // Unit title
-                sb.AppendLine($"{new string('#', unitTitleLevel)} {unit.Title}");
-                sb.AppendLine();
-
-                if (!string.IsNullOrWhiteSpace(unit.MarkdownContent))
+                foreach (var unit in module.Units)
                 {
-                    // Shift headings in content to proper level
-                    var adjustedContent = AdjustHeadingLevels(unit.MarkdownContent, unitHeadingBaseLevel);
-                    sb.AppendLine(adjustedContent.Trim());
+                    // Each unit is H1
+                    sb.AppendLine($"# {unit.Title}");
                     sb.AppendLine();
+
+                    if (!string.IsNullOrWhiteSpace(unit.MarkdownContent))
+                    {
+                        // Shift content headings so minimum becomes H2
+                        var adjustedContent = AdjustHeadingLevels(unit.MarkdownContent, 2);
+                        sb.AppendLine(adjustedContent.Trim());
+                        sb.AppendLine();
+                    }
                 }
             }
         }
 
         return sb.ToString();
     }
+
+    /// <summary>
+    /// Single-content overload for backward compatibility.
+    /// </summary>
+    public string Merge(DownloadedContent content)
+        => Merge([content]);
+
+    private static string EscapeYaml(string value)
+        => value.Replace("\\", "\\\\").Replace("\"", "\\\"");
 
     /// <summary>
     /// Adjusts all heading levels in markdown so the minimum heading starts at baseLevel.

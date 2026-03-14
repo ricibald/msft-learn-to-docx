@@ -1,0 +1,9 @@
+services:
+  msft-learn-to-docx:
+    build: .
+    environment:
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+    volumes:
+      - ./output:/output
+    # Override command with your URLs and options:
+    #   docker compose run msft-learn-to-docx "https://learn.microsoft.com/.../paths/copilot/" --title "Guide"
