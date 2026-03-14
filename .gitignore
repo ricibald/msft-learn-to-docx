@@ -1,0 +1,23 @@
+## .NET
+bin/
+obj/
+*.user
+*.suo
+*.cache
+*.dll
+*.exe
+*.pdb
+*.nupkg
+project.lock.json
+
+## IDE
+.vs/
+.vscode/
+*.sln.docstates
+
+## Output
+output/
+
+## OS
+Thumbs.db
+.DS_Store
