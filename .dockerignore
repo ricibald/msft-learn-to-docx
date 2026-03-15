@@ -3,4 +3,6 @@ obj/
 output/
 *.user
 *.suo
+*.sln
 .vs/
+.github/

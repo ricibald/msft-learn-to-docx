@@ -4,7 +4,7 @@ WORKDIR /src
 COPY *.csproj .
 RUN dotnet restore
 COPY . .
-RUN dotnet publish -c Release -o /app --no-restore
+RUN dotnet publish MsftLearnToDocx.csproj -c Release -o /app --no-restore
 
 # Stage 2: Runtime
 FROM mcr.microsoft.com/dotnet/runtime:8.0-alpine AS runtime
