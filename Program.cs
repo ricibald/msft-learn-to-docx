@@ -15,7 +15,7 @@ string? templatePath = null;
 string? title = null;
 string? outputPath = null;
 string format = "docx";
-int tocDepth = 3;
+int tocDepth = 2;
 
 for (var i = 0; i < args.Length; i++)
 {
@@ -205,7 +205,7 @@ static void PrintUsage()
                                   Default: Templates/template.docx (if exists).
           --output, -o <dir>      Output directory. Default: output/{slug}_{timestamp}/.
           --format, -f <fmt>      Output format: "docx" (default) or "md" (markdown only, no pandoc).
-          --toc-depth <n>         Table of contents depth for DOCX (1-6). Default: 3.
+          --toc-depth <n>         Table of contents depth for DOCX (1-6). Default: 2.
           --help, -h              Show this help.
 
         Environment Variables:

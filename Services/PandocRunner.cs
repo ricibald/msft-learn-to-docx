@@ -10,7 +10,7 @@ public sealed class PandocRunner
     /// <summary>
     /// Converts a markdown file to DOCX using pandoc.
     /// </summary>
-    public void Convert(string markdownPath, string outputPath, string? templatePath, int tocDepth = 3)
+    public void Convert(string markdownPath, string outputPath, string? templatePath, int tocDepth = 2)
     {
         var pandocPath = FindPandoc();
 

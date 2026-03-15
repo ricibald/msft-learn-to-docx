@@ -6,7 +6,7 @@
 
 - [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
 - [pandoc](https://pandoc.org/installing.html) in system PATH
-- [rsvg-convert](https://wiki.gnome.org/Projects/LibRsvg) (optional, for SVG images in DOCX) — `apt install librsvg2-bin` on Debian/Ubuntu, `brew install librsvg` on macOS, `choco install rsvg-convert` on Windows
+- [rsvg-convert](https://wiki.gnome.org/Projects/LibRsvg) (optional, for SVG images in DOCX) — `apt install librsvg2-bin` on Debian/Ubuntu, `brew install librsvg` on macOS, `choco install rsvg-convert` or `winget install --source winget --exact --id JohnMacFarlane.Pandoc` on Windows
 - (Optional) `GITHUB_TOKEN` environment variable for higher GitHub API rate limits
 
 ## Usage
@@ -56,11 +56,11 @@ docker run --rm -v "$(pwd)/output:/output" \
   --title "My Training Guide"
 ```
 
-Pre-built image (if published):
+Pre-built image from DockerHub:
 
 ```bash
-docker pull <your-dockerhub-user>/msft-learn-to-docx
-docker run --rm -v "$(pwd)/output:/output" <your-dockerhub-user>/msft-learn-to-docx "<url>"
+docker pull ricibald/msft-learn-to-docx
+docker run --rm -v "$(pwd)/output:/output" ricibald/msft-learn-to-docx "<url>"
 ```
 
 #### Docker Compose
@@ -193,3 +193,11 @@ Handled Docs-Flavored Markdown syntax:
 - Only 200 OK responses are cached; 404 and errors are never cached
 - Repeated runs for the same content reuse cached data, avoiding redundant API calls
 - To clear the cache, delete the cache directory
+
+## CI/CD
+
+A GitHub Actions workflow (`.github/workflows/docker-publish.yml`) automatically builds and pushes the Docker image to DockerHub on every git push.
+
+**Required repository secrets:**
+- `DOCKERHUB_USERNAME` — your DockerHub username
+- `DOCKERHUB_TOKEN` — a DockerHub access token (Settings → Security → Access Tokens)
