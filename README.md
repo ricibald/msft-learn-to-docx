@@ -6,7 +6,7 @@
 
 - [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
 - [pandoc](https://pandoc.org/installing.html) in system PATH
-- [rsvg-convert](https://wiki.gnome.org/Projects/LibRsvg) (optional, for SVG images in DOCX) — `apt install librsvg2-bin` on Debian/Ubuntu, `brew install librsvg` on macOS, `choco install rsvg-convert` or `winget install --source winget --exact --id JohnMacFarlane.Pandoc` on Windows
+- [rsvg-convert](https://wiki.gnome.org/Projects/LibRsvg) (optional, for SVG images in DOCX) — `apt install librsvg2-bin` on Debian/Ubuntu, `brew install librsvg` on macOS, `choco install rsvg-convert` on Windows
 - (Optional) `GITHUB_TOKEN` environment variable for higher GitHub API rate limits
 
 ## Usage
