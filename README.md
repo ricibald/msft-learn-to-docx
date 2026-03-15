@@ -1,6 +1,41 @@
 # MsftLearnToDocx
 
+[![Docker Pulls](https://img.shields.io/docker/pulls/ricibald/msft-learn-to-docx)](https://hub.docker.com/r/ricibald/msft-learn-to-docx)
+[![Docker Image Size](https://img.shields.io/docker/image-size/ricibald/msft-learn-to-docx/latest)](https://hub.docker.com/r/ricibald/msft-learn-to-docx)
+
 .NET 8 console app that converts Microsoft Learn training paths and modules into a unified Markdown document and a Word (DOCX) file via **pandoc**.
+
+---
+
+## Quick Start — Docker Hub
+
+No local install required. Pull the pre-built image and run in one command:
+
+```bash
+docker run --rm -v "$(pwd)/output:/output" \
+  ricibald/msft-learn-to-docx \
+  "https://learn.microsoft.com/en-us/training/paths/copilot/"
+```
+
+Multiple URLs merged into a single document:
+
+```bash
+docker run --rm -v "$(pwd)/output:/output" \
+  ricibald/msft-learn-to-docx \
+  "https://learn.microsoft.com/en-us/training/paths/copilot/" \
+  "https://learn.microsoft.com/en-us/training/paths/gh-copilot-2/" \
+  --title "GitHub Copilot Complete Guide"
+```
+
+> Pass `GITHUB_TOKEN` to avoid GitHub API rate limits on large paths:
+> ```bash
+> docker run --rm -v "$(pwd)/output:/output" -e GITHUB_TOKEN="$GITHUB_TOKEN" \
+>   ricibald/msft-learn-to-docx "https://learn.microsoft.com/..."
+> ```
+
+Output is written to `./output/{slug}_{timestamp}/` on the host.
+
+---
 
 ## Prerequisites
 
@@ -56,12 +91,7 @@ docker run --rm -v "$(pwd)/output:/output" \
   --title "My Training Guide"
 ```
 
-Pre-built image from DockerHub:
-
-```bash
-docker pull ricibald/msft-learn-to-docx
-docker run --rm -v "$(pwd)/output:/output" ricibald/msft-learn-to-docx "<url>"
-```
+> The pre-built image is available on Docker Hub as `ricibald/msft-learn-to-docx` — see [Quick Start](#quick-start--docker-hub) above.
 
 #### Docker Compose
 

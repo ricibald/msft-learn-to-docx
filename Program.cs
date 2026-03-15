@@ -159,9 +159,12 @@ static (string type, string slug) ParseLearnUrl(string url)
 static HttpClient CreateHttpClient()
 {
     // Handler pipeline: CachingHandler → RetryHandler → HttpClientHandler
-    var cacheDir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "MsftLearnToDocx", "cache");
+    var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+    if (string.IsNullOrEmpty(localAppData))
+        localAppData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".cache");
+    if (string.IsNullOrEmpty(localAppData))
+        localAppData = "/tmp";
+    var cacheDir = Path.Combine(localAppData, "MsftLearnToDocx", "cache");
     var handler = new CachingHandler(new RetryHandler(), cacheDir, TimeSpan.FromHours(24));
 
     var client = new HttpClient(handler);
