@@ -31,6 +31,7 @@
 - `ContentDownloader`: orchestrates download of paths/modules/units/media
 - `PandocRunner`: invokes pandoc with `--toc`, `--toc-depth`, `--reference-doc`, `--resource-path`
 - `CachingHandler`: file-based HTTP cache (24h TTL), caches 200 OK only, SHA256 hashed URLs as keys
+  - **Body-read retry**: if `ReadAsByteArrayAsync` fails with `IOException` (socket reset after 200 OK), CachingHandler retries the full request up to 3 times via `CloneGetRequest`. RetryHandler cannot re-intercept body-read failures because the response has already been returned.
 
 ### Multi-URL Support
 - CLI accepts multiple positional URL arguments
@@ -47,9 +48,11 @@
 - YAML frontmatter (`title`, `date`) renders as pandoc title block (Word cover page)
 
 ### Docker
-- Multi-stage Dockerfile: SDK build → alpine runtime + pandoc
+- Multi-stage Dockerfile: SDK build → alpine runtime + pandoc + `rsvg-convert`
+  - **Alpine package name**: `rsvg-convert` (NOT `librsvg` — that installs only the `.so` library without the CLI, since Alpine ~3.18)
 - Docker Compose for convenience (`docker-compose.yml`)
-- Output directory defaults to `/output` (Docker VOLUME)
+- Output directory: `/output` (VOLUME) — `Program.cs` detects `DOTNET_RUNNING_IN_CONTAINER=true` and writes there instead of `./output/`
+- Cache directory: `/cache` (VOLUME) — mount as named volume `msftlearn-cache` to persist HTTP cache across runs
 - `GITHUB_TOKEN` passed via `-e` flag or `.env`
 
 ### Dependencies

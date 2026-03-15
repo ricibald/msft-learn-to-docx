@@ -81,7 +81,9 @@ var pandoc = new PandocRunner();
 // --- Create output directory ---
 var firstSlug = parsedUrls[0].slug;
 var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
-var outputDir = outputPath ?? Path.Combine(Directory.GetCurrentDirectory(), "output", $"{firstSlug}_{timestamp}");
+var isContainer = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true";
+var outputBase = isContainer ? "/output" : Path.Combine(Directory.GetCurrentDirectory(), "output");
+var outputDir = outputPath ?? Path.Combine(outputBase, $"{firstSlug}_{timestamp}");
 Directory.CreateDirectory(outputDir);
 
 // --- Resolve template (default: Templates/template.docx) ---
@@ -159,12 +161,20 @@ static (string type, string slug) ParseLearnUrl(string url)
 static HttpClient CreateHttpClient()
 {
     // Handler pipeline: CachingHandler → RetryHandler → HttpClientHandler
-    var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-    if (string.IsNullOrEmpty(localAppData))
-        localAppData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".cache");
-    if (string.IsNullOrEmpty(localAppData))
-        localAppData = "/tmp";
-    var cacheDir = Path.Combine(localAppData, "MsftLearnToDocx", "cache");
+    string cacheDir;
+    if (Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true")
+    {
+        cacheDir = "/cache";
+    }
+    else
+    {
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (string.IsNullOrEmpty(localAppData))
+            localAppData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".cache");
+        if (string.IsNullOrEmpty(localAppData))
+            localAppData = "/tmp";
+        cacheDir = Path.Combine(localAppData, "MsftLearnToDocx", "cache");
+    }
     var handler = new CachingHandler(new RetryHandler(), cacheDir, TimeSpan.FromHours(24));
 
     var client = new HttpClient(handler);

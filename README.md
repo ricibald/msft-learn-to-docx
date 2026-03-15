@@ -12,7 +12,10 @@
 No local install required. Pull the pre-built image and run in one command:
 
 ```bash
-docker run --rm -v "$(pwd)/output:/output" \
+docker run --rm \
+  -v "$(pwd)/output:/output" \
+  -v msftlearn-cache:/cache \
+  -e GITHUB_TOKEN="$GITHUB_TOKEN" \
   ricibald/msft-learn-to-docx \
   "https://learn.microsoft.com/en-us/training/paths/copilot/"
 ```
@@ -20,18 +23,21 @@ docker run --rm -v "$(pwd)/output:/output" \
 Multiple URLs merged into a single document:
 
 ```bash
-docker run --rm -v "$(pwd)/output:/output" \
+docker run --rm \
+  -v "$(pwd)/output:/output" \
+  -v msftlearn-cache:/cache \
+  -e GITHUB_TOKEN="$GITHUB_TOKEN" \
   ricibald/msft-learn-to-docx \
   "https://learn.microsoft.com/en-us/training/paths/copilot/" \
   "https://learn.microsoft.com/en-us/training/paths/gh-copilot-2/" \
   --title "GitHub Copilot Complete Guide"
 ```
 
-> Pass `GITHUB_TOKEN` to avoid GitHub API rate limits on large paths:
-> ```bash
-> docker run --rm -v "$(pwd)/output:/output" -e GITHUB_TOKEN="$GITHUB_TOKEN" \
->   ricibald/msft-learn-to-docx "https://learn.microsoft.com/..."
-> ```
+> **GITHUB_TOKEN** (recommended): set it to get 5000 req/h instead of 60 req/h on the GitHub API.
+> Without it, large learning paths may hit the unauthenticated rate limit.
+>
+> **Cache volume** (`-v msftlearn-cache:/cache`): reuses HTTP responses across runs so repeated downloads are instant.
+> The named Docker volume persists between container restarts automatically.
 
 Output is written to `./output/{slug}_{timestamp}/` on the host.
 
@@ -77,14 +83,18 @@ Build and run without installing .NET or pandoc locally:
 # Build the image
 docker build -t msft-learn-to-docx .
 
-# Run (output mounted to current directory)
-docker run --rm -v "$(pwd)/output:/output" \
+# Run (output mounted to current directory, cache persisted in named volume)
+docker run --rm \
+  -v "$(pwd)/output:/output" \
+  -v msftlearn-cache:/cache \
   -e GITHUB_TOKEN="$GITHUB_TOKEN" \
   msft-learn-to-docx \
   "https://learn.microsoft.com/en-us/training/paths/copilot/"
 
 # Multiple URLs with custom title
-docker run --rm -v "$(pwd)/output:/output" \
+docker run --rm \
+  -v "$(pwd)/output:/output" \
+  -v msftlearn-cache:/cache \
   msft-learn-to-docx \
   "https://learn.microsoft.com/.../paths/copilot/" \
   "https://learn.microsoft.com/.../modules/mod/" \
@@ -104,7 +114,7 @@ docker compose run msft-learn-to-docx "https://learn.microsoft.com/.../paths/cop
 
 Generated files are saved under `output/{slug}_{timestamp}/`:
 
-```
+```text
 output/copilot_20260314-120000/
 ├── media/           # Downloaded images (prefixed with M{n}_ per module)
 ├── copilot.md       # Unified Markdown (with YAML frontmatter cover page)
@@ -158,7 +168,7 @@ graph TD
 The mapping between module UID and GitHub path is non-deterministic. Known exceptions:
 
 | UID | GitHub Directory | Notes |
-|-----|-----------------|-------|
+| --- | --------------- | ----- |
 | `learn.github.copilot-spaces` | `introduction-copilot-spaces` | slug ≠ uid |
 | `learn.github-copilot-with-javascript` | `introduction-copilot-javascript` | slug ≠ uid, no provider |
 | `learn.wwl.*` | `learn-pr/wwl-azure/` | wwl ≠ wwl-azure |
@@ -181,7 +191,7 @@ Handled Docs-Flavored Markdown syntax:
 
 ## Project Structure
 
-```
+```text
 ├── MsftLearnToDocx.csproj     # .NET 8 project
 ├── Program.cs                  # Entry point and orchestration
 ├── Dockerfile                  # Multi-stage Docker build (SDK → runtime + pandoc)
@@ -211,6 +221,7 @@ Handled Docs-Flavored Markdown syntax:
 ## HTTP Resilience
 
 `RetryHandler` (DelegatingHandler) automatically handles:
+
 - HTTP 429 (Too Many Requests) respecting the `Retry-After` header
 - HTTP 5xx / timeouts with exponential backoff (2s, 4s, 8s)
 - Network errors with 3 automatic retries
@@ -219,15 +230,18 @@ Handled Docs-Flavored Markdown syntax:
 
 `CachingHandler` (DelegatingHandler) caches all successful (200 OK) GET responses to disk with a 24-hour TTL.
 
-- Cache location: `%LOCALAPPDATA%/MsftLearnToDocx/cache/` (Windows) or `~/.local/share/MsftLearnToDocx/cache/` (Linux/macOS)
+- **Docker**: cache is stored in `/cache` (mount as `-v msftlearn-cache:/cache` to persist across runs)
+- **Host (Windows)**: `%LOCALAPPDATA%/MsftLearnToDocx/cache/`
+- **Host (Linux/macOS)**: `~/.local/share/MsftLearnToDocx/cache/`
 - Only 200 OK responses are cached; 404 and errors are never cached
-- Repeated runs for the same content reuse cached data, avoiding redundant API calls
-- To clear the cache, delete the cache directory
+- Repeated runs for the same content reuse cached data, avoiding redundant API calls and GitHub rate limit consumption
+- To clear the cache, delete the cache directory (or remove the Docker volume: `docker volume rm msftlearn-cache`)
 
 ## CI/CD
 
 A GitHub Actions workflow (`.github/workflows/docker-publish.yml`) automatically builds and pushes the Docker image to DockerHub on every git push.
 
 **Required repository secrets:**
+
 - `DOCKERHUB_USERNAME` — your DockerHub username
 - `DOCKERHUB_TOKEN` — a DockerHub access token (Settings → Security → Access Tokens)

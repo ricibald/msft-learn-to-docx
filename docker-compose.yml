@@ -5,5 +5,9 @@ services:
       - GITHUB_TOKEN=${GITHUB_TOKEN:-}
     volumes:
       - ./output:/output
+      - msftlearn-cache:/cache
     # Override command with your URLs and options:
     #   docker compose run msft-learn-to-docx "https://learn.microsoft.com/.../paths/copilot/" --title "Guide"
+
+volumes:
+  msftlearn-cache:

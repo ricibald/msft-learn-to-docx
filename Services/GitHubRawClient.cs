@@ -34,7 +34,7 @@ public sealed class GitHubRawClient
         if (response.StatusCode == HttpStatusCode.NotFound)
             return null;
 
-        response.EnsureSuccessStatusCode();
+        EnsureGitHubSuccessStatusCode(response, url);
         return await response.Content.ReadAsStringAsync();
     }
 
@@ -72,6 +72,20 @@ public sealed class GitHubRawClient
         await response.Content.CopyToAsync(fs);
     }
 
+    private static void EnsureGitHubSuccessStatusCode(HttpResponseMessage response, string url)
+    {
+        if (response.IsSuccessStatusCode)
+            return;
+
+        if (response.StatusCode == HttpStatusCode.Forbidden)
+            throw new HttpRequestException(
+                $"GitHub API rate limit exceeded (HTTP 403). " +
+                $"Set the GITHUB_TOKEN environment variable to raise the limit from 60 to 5000 req/h. " +
+                $"URL: {url}");
+
+        response.EnsureSuccessStatusCode();
+    }
+
     /// <summary>
     /// Lists directory contents via the GitHub Contents API.
     /// </summary>
@@ -82,7 +96,7 @@ public sealed class GitHubRawClient
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github.v3+json"));
 
         var response = await _http.SendAsync(request);
-        response.EnsureSuccessStatusCode();
+        EnsureGitHubSuccessStatusCode(response, url);
 
         var json = await response.Content.ReadAsStringAsync();
         var items = JsonSerializer.Deserialize<List<GitHubContentItem>>(json, new JsonSerializerOptions
