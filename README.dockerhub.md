@@ -6,6 +6,8 @@
 
 Convert Microsoft Learn training paths and modules into a Word document (DOCX) or Markdown — no local install of .NET or pandoc required.
 
+> **Find learning paths**: <https://learn.microsoft.com/en-us/training/browse/?resource_type=learning%20path>
+
 ## Quick start
 
 ```bash

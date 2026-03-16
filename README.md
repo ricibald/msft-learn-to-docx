@@ -6,6 +6,9 @@
 
 .NET 8 console app that converts Microsoft Learn training paths and modules into a unified Markdown document and a Word (DOCX) file via **pandoc**.
 
+> **Find learning paths**: browse all available Microsoft Learn paths at  
+> <https://learn.microsoft.com/en-us/training/browse/?resource_type=learning%20path>
+
 ---
 
 ## Quick Start — Docker Hub
