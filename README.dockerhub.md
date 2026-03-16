@@ -1,0 +1,61 @@
+# MsftLearnToDocx
+
+[![Docker Pulls](https://img.shields.io/docker/pulls/ricibald/msft-learn-to-docx)](https://hub.docker.com/r/ricibald/msft-learn-to-docx)
+[![Docker Image Size](https://img.shields.io/docker/image-size/ricibald/msft-learn-to-docx/latest)](https://hub.docker.com/r/ricibald/msft-learn-to-docx)
+
+Convert Microsoft Learn training paths and modules into a Word document (DOCX) or Markdown — no local install of .NET or pandoc required.
+
+## Quick start
+
+```bash
+docker run --rm \
+  -v "$(pwd)/output:/output" \
+  -v msftlearn-cache:/cache \
+  -e GITHUB_TOKEN="$GITHUB_TOKEN" \
+  ricibald/msft-learn-to-docx \
+  "https://learn.microsoft.com/en-us/training/paths/copilot/"
+```
+
+Output is written to `./output/{slug}_{timestamp}/` on the host.
+
+## Multiple URLs
+
+```bash
+docker run --rm \
+  -v "$(pwd)/output:/output" \
+  -v msftlearn-cache:/cache \
+  -e GITHUB_TOKEN="$GITHUB_TOKEN" \
+  ricibald/msft-learn-to-docx \
+  "https://learn.microsoft.com/en-us/training/paths/copilot/" \
+  "https://learn.microsoft.com/en-us/training/paths/gh-copilot-2/" \
+  --title "GitHub Copilot Complete Guide"
+```
+
+## Volumes
+
+| Volume | Mount | Purpose |
+| --- | --- | --- |
+| output | `-v $(pwd)/output:/output` | Output directory (DOCX + MD + media) |
+| `/cache` | `-v msftlearn-cache:/cache` | HTTP response cache — reuse across runs |
+
+## Environment variables
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `GITHUB_TOKEN` | Recommended | GitHub Personal Access Token — raises rate limit from 60 to 5000 req/h |
+
+## Options
+
+```
+<url> [<url> ...]              One or more learn.microsoft.com paths or modules URLs
+--title "My Title"            Override the document title
+--template path/to/ref.docx   Custom pandoc reference DOCX template
+--format md                   Generate Markdown only (no pandoc needed)
+--output, -o <dir>            Custom output directory
+--toc-depth N                 Table of Contents depth (default: 3)
+--help                        Show help
+```
+
+## Source
+
+[github.com/ricibald/msft-learn-to-docx](https://github.com/ricibald/msft-learn-to-docx)
