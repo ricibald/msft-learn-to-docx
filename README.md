@@ -297,9 +297,10 @@ Example frontmatter written into every generated Markdown/DOCX:
 ```yaml
 ---
 title: "GitHub Copilot Guide"
-author:
-  - "Microsoft Corporation"
 date: 2026-03-16
+keywords:
+  - "Introduction to GitHub Copilot"
+  - "Advanced GitHub Copilot"
 subject: "Microsoft Learn"
 description: "Content © Microsoft Corporation, licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Source: https://learn.microsoft.com/..."
 ---

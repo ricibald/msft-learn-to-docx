@@ -25,11 +25,6 @@ public sealed partial class MarkdownMerger
             ?? (contents.Count == 1 ? contents[0].Title : string.Join(" / ", contents.Select(c => c.Title)));
         var dateStr = (date ?? DateTime.Now).ToString("yyyy-MM-dd");
 
-        // subtitle: source attribution reference (short, renders well as Word subtitle)
-        var subtitle = sourceUrls?.Count > 0
-            ? $"Source: {string.Join(" | ", sourceUrls)}"
-            : "Source: https://learn.microsoft.com";
-
         // keywords: module titles represent the topics covered
         var keywords = contents
             .SelectMany(c => c.Modules)
@@ -49,9 +44,6 @@ public sealed partial class MarkdownMerger
 
         sb.AppendLine("---");
         sb.AppendLine($"title: \"{EscapeYaml(title)}\"");
-        sb.AppendLine($"subtitle: \"{EscapeYaml(subtitle)}\"");
-        sb.AppendLine("author:");
-        sb.AppendLine("  - \"Microsoft Corporation\"");
         sb.AppendLine($"date: {dateStr}");
         if (keywords.Count > 0)
         {
@@ -64,28 +56,30 @@ public sealed partial class MarkdownMerger
         sb.AppendLine("---");
         sb.AppendLine();
 
-        // Visible attribution notice in document body (required by CC BY 4.0 Section 3(a))
-        sb.AppendLine("> **Attribution**: Content originally published on [Microsoft Learn](https://learn.microsoft.com), " +
+        // CC BY 4.0 attribution section — dedicated H1 paragraph (required by CC BY 4.0 Section 3(a))
+        sb.AppendLine("# Attribution");
+        sb.AppendLine();
+        sb.AppendLine("Content originally published on [Microsoft Learn](https://learn.microsoft.com), " +
             "© Microsoft Corporation, licensed under " +
             "[Creative Commons Attribution 4.0 International (CC BY 4.0)](https://creativecommons.org/licenses/by/4.0/). " +
             "Adapted for offline use — original content unmodified except for format conversion.");
+        sb.AppendLine();
         if (sourceUrls?.Count > 0)
         {
+            sb.Append("**Source**:");
             if (sourceUrls.Count == 1)
             {
-                sb.AppendLine(">");
-                sb.AppendLine($"> **Source**: <{sourceUrls[0]}>");
+                sb.AppendLine($" <{sourceUrls[0]}>");
             }
             else
             {
-                sb.AppendLine(">");
-                sb.AppendLine("> **Source**:");
-                sb.AppendLine(">");
+                sb.AppendLine();
+                sb.AppendLine();
                 foreach (var url in sourceUrls)
-                    sb.AppendLine($"> - <{url}>");
+                    sb.AppendLine($"- <{url}>");
             }
+            sb.AppendLine();
         }
-        sb.AppendLine();
 
         foreach (var content in contents)
         {

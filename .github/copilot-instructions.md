@@ -27,8 +27,7 @@
 - `LearnCatalogClient`: `https://learn.microsoft.com/api/catalog/?uid=...&type=modules` — no authentication required
 - `ModuleResolver`: heuristic parent dir (from uid prefix) + fallback full scan of learn-pr/
 - `DfmConverter`: regex-based, converts :::image:::, [!NOTE], [!div], :::zone:::, [!VIDEO], :::code:::, etc. Also runs `EnsureBlankLineBeforeLists` to inject a blank line before any list block that immediately follows a paragraph (prevents pandoc from rendering bullets as inline text).
-- `MarkdownMerger`: YAML frontmatter generation (title, subtitle, author, date, keywords, subject, description with CC BY 4.0 attribution) + visible attribution blockquote at document top + heading normalization (Module = H1, Unit = H2, content = H3+). `Merge()` accepts optional `sourceUrls` parameter passed from `Program.cs` to embed original learn.microsoft.com URLs in the attribution.
-  - `subtitle`: populated from `DownloadedContent.Summary` (path or module summary from YAML)
+- `MarkdownMerger`: YAML frontmatter generation (title, date, keywords, subject, description with CC BY 4.0 attribution) + dedicated **# Attribution** H1 section at document top + heading normalization (Module = H1, Unit = H2, content = H3+). `Merge()` accepts optional `sourceUrls` parameter passed from `Program.cs` to embed original learn.microsoft.com URLs in the attribution.
   - `keywords`: list of module titles (topics covered)
 - `DownloadedContent`: plain model with `Title`, `IsPath`, `Modules` list
 - `PandocRunner`: invokes pandoc with `--toc`, `--toc-depth`, `--reference-doc`, `--resource-path`
@@ -48,7 +47,7 @@
 - Module title = H1
 - Unit title = H2
 - Content headings within each unit are shifted so minimum = H3
-- YAML frontmatter (`title`, `subtitle`, `author`, `date`, `keywords`, `subject`, `description`) renders as pandoc title block (Word cover page + document properties)
+- YAML frontmatter (`title`, `date`, `keywords`, `subject`, `description`) renders as pandoc title block (Word cover page + document properties)
 
 ### Content License
 - Source repo `MicrosoftDocs/learn` is licensed under **CC BY 4.0** — confirmed from `https://raw.githubusercontent.com/MicrosoftDocs/learn/main/LICENSE`
