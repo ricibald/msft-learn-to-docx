@@ -312,4 +312,4 @@ description: "Content © Microsoft Corporation, licensed under CC BY 4.0 (https:
 
 ### This tool's own license
 
-The **MsftLearnToDocx tool itself** (the .NET source code) is MIT-licensed — see [LICENSE](LICENSE) if present in this repository.
+The **MsftLearnToDocx tool itself** (the .NET source code) is MIT-licensed — see [LICENSE](LICENSE).
