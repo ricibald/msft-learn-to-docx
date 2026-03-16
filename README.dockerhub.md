@@ -2,6 +2,7 @@
 
 [![Docker Pulls](https://img.shields.io/docker/pulls/ricibald/msft-learn-to-docx)](https://hub.docker.com/r/ricibald/msft-learn-to-docx)
 [![Docker Image Size](https://img.shields.io/docker/image-size/ricibald/msft-learn-to-docx/latest)](https://hub.docker.com/r/ricibald/msft-learn-to-docx)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/ricibald/msft-learn-to-docx/blob/main/LICENSE)
 
 Convert Microsoft Learn training paths and modules into a Word document (DOCX) or Markdown — no local install of .NET or pandoc required.
 
