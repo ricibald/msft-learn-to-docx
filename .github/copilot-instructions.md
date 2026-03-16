@@ -11,7 +11,7 @@
 4. For each module: Catalog API → directory name → GitHub scan parent dirs → download unit YAML
 5. For each unit: download markdown from includes/ + download media from media/
 6. DFM → standard Markdown conversion (regex-based)
-7. Merge all contents into single markdown with YAML frontmatter (`title`, `date`) for Word cover page
+7. Merge all contents into single markdown with YAML frontmatter (`title`, `author`, `date`, `subject`, `description`) for Word cover page + CC BY 4.0 attribution blockquote
 8. Module title = H1, Unit title = H2, content headings = H3+
 9. pandoc → DOCX
 
@@ -26,9 +26,11 @@
 - `GitHubRawClient`: raw.githubusercontent.com for content + api.github.com/contents for directory listing
 - `LearnCatalogClient`: `https://learn.microsoft.com/api/catalog/?uid=...&type=modules` — no authentication required
 - `ModuleResolver`: heuristic parent dir (from uid prefix) + fallback full scan of learn-pr/
-- `DfmConverter`: regex-based, converts :::image:::, [!NOTE], [!div], :::zone:::, [!VIDEO], :::code:::, etc.
-- `MarkdownMerger`: YAML frontmatter generation + heading normalization (Module = H1, Unit = H2, content = H3+)
-- `ContentDownloader`: orchestrates download of paths/modules/units/media
+- `DfmConverter`: regex-based, converts :::image:::, [!NOTE], [!div], :::zone:::, [!VIDEO], :::code:::, etc. Also runs `EnsureBlankLineBeforeLists` to inject a blank line before any list block that immediately follows a paragraph (prevents pandoc from rendering bullets as inline text).
+- `MarkdownMerger`: YAML frontmatter generation (title, subtitle, author, date, keywords, subject, description with CC BY 4.0 attribution) + visible attribution blockquote at document top + heading normalization (Module = H1, Unit = H2, content = H3+). `Merge()` accepts optional `sourceUrls` parameter passed from `Program.cs` to embed original learn.microsoft.com URLs in the attribution.
+  - `subtitle`: populated from `DownloadedContent.Summary` (path or module summary from YAML)
+  - `keywords`: list of module titles (topics covered)
+- `DownloadedContent`: plain model with `Title`, `IsPath`, `Modules` list
 - `PandocRunner`: invokes pandoc with `--toc`, `--toc-depth`, `--reference-doc`, `--resource-path`
 - `CachingHandler`: file-based HTTP cache (24h TTL), caches 200 OK only, SHA256 hashed URLs as keys
   - **Body-read retry**: if `ReadAsByteArrayAsync` fails with `IOException` (socket reset after 200 OK), CachingHandler retries the full request up to 3 times via `CloneGetRequest`. RetryHandler cannot re-intercept body-read failures because the response has already been returned.
@@ -38,6 +40,7 @@
 - Each URL is downloaded independently (path or module)
 - All `DownloadedContent` objects are merged into a single markdown + DOCX
 - `--title` flag overrides the auto-derived document title
+- `inputUrls` (the original CLI URL arguments) are passed to `merger.Merge()` as `sourceUrls` for CC BY 4.0 attribution
 - `--output` / `-o` overrides the auto-generated output directory
 - `--format` / `-f` selects output format: `docx` (default) or `md` (markdown only, no pandoc required)
 
@@ -45,7 +48,15 @@
 - Module title = H1
 - Unit title = H2
 - Content headings within each unit are shifted so minimum = H3
-- YAML frontmatter (`title`, `date`) renders as pandoc title block (Word cover page)
+- YAML frontmatter (`title`, `subtitle`, `author`, `date`, `keywords`, `subject`, `description`) renders as pandoc title block (Word cover page + document properties)
+
+### Content License
+- Source repo `MicrosoftDocs/learn` is licensed under **CC BY 4.0** — confirmed from `https://raw.githubusercontent.com/MicrosoftDocs/learn/main/LICENSE`
+- Every generated document must include attribution per CC BY 4.0 §3(a): creator ID, copyright notice, license URI, and source URI
+- Attribution is injected by `MarkdownMerger.Merge()` in two places:
+  1. YAML frontmatter fields (`author`, `subject`, `description`) → embedded in Word document properties
+  2. Visible blockquote at the top of the document body
+- Fetching via GitHub API / raw URLs is **not scraping** — it is standard API usage of publicly available content
 
 ### Docker
 - Multi-stage Dockerfile: SDK build → alpine runtime + pandoc + `rsvg-convert`

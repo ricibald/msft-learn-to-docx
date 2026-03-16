@@ -123,7 +123,7 @@ foreach (var (contentType, slug) in parsedUrls)
 
 // --- Merge markdown (all contents into a single document) ---
 Console.WriteLine("\nMerging markdown...");
-var mergedMarkdown = merger.Merge(allContents, title);
+var mergedMarkdown = merger.Merge(allContents, title, sourceUrls: inputUrls);
 var mdPath = Path.Combine(outputDir, $"{firstSlug}.md");
 await File.WriteAllTextAsync(mdPath, mergedMarkdown);
 Console.WriteLine($"  Markdown saved: {mdPath}");

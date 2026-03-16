@@ -268,3 +268,43 @@ A GitHub Actions workflow (`.github/workflows/docker-publish.yml`) automatically
 
 - `DOCKERHUB_USERNAME` — your DockerHub username
 - `DOCKERHUB_TOKEN` — a DockerHub access token (Settings → Security → Access Tokens)
+
+---
+
+## Content License & Legal Notice
+
+### Source content
+
+All training content is fetched directly from the **[MicrosoftDocs/learn](https://github.com/MicrosoftDocs/learn)** public GitHub repository via the official GitHub API and the [Microsoft Learn Catalog API](https://learn.microsoft.com/en-us/training/support/catalog-api-developer-reference). This is **not web scraping** — it uses the same public APIs and raw content that GitHub serves to any authenticated or anonymous client.
+
+### License
+
+The Microsoft Learn training content is licensed under the  
+**[Creative Commons Attribution 4.0 International (CC BY 4.0)](https://creativecommons.org/licenses/by/4.0/)**.  
+See the [LICENSE file in MicrosoftDocs/learn](https://github.com/MicrosoftDocs/learn/blob/main/LICENSE) for the full text.
+
+This tool acts as a **format converter**: it reproduces the content as-is (no substantive modification) into DOCX/Markdown for offline reading. Under CC BY 4.0, this is permitted provided attribution is preserved.
+
+### Attribution in generated documents
+
+Every generated document automatically includes the required CC BY 4.0 attribution:
+
+- **YAML frontmatter** (embedded as Word document properties): `author`, `subject`, `description` fields carry the full attribution string — creator, copyright notice, license URI, and source URL(s).
+- **Visible notice** at the top of the document body: a blockquote crediting Microsoft Corporation, the CC BY 4.0 license, and the original source URL(s).
+
+Example frontmatter written into every generated Markdown/DOCX:
+
+```yaml
+---
+title: "GitHub Copilot Guide"
+author:
+  - "Microsoft Corporation"
+date: 2026-03-16
+subject: "Microsoft Learn"
+description: "Content © Microsoft Corporation, licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Source: https://learn.microsoft.com/..."
+---
+```
+
+### This tool's own license
+
+The **MsftLearnToDocx tool itself** (the .NET source code) is MIT-licensed — see [LICENSE](LICENSE) if present in this repository.

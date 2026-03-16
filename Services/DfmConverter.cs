@@ -27,6 +27,7 @@ public sealed partial class DfmConverter
         result = ConvertVideos(result);
         result = ConvertCodeReferences(result, codeContents);
         result = CleanupIncludeRefs(result);
+        result = EnsureBlankLineBeforeLists(result);
         result = CleanupTrailingWhitespace(result);
 
         return result;
@@ -181,6 +182,16 @@ public sealed partial class DfmConverter
         return IncludeRegex().Replace(markdown, "");
     }
 
+    /// <summary>
+    /// Ensures a blank line precedes any bullet/numbered list item that directly follows
+    /// a non-empty, non-list, non-blank line. Without this, pandoc may not recognize the
+    /// list and renders it as inline paragraph text.
+    /// </summary>
+    private static string EnsureBlankLineBeforeLists(string markdown)
+    {
+        return ListWithoutPrecedingBlankLine().Replace(markdown, "$1\n\n$2");
+    }
+
     private static string CleanupTrailingWhitespace(string markdown)
     {
         // Remove excessive blank lines (more than 2 consecutive)
@@ -230,4 +241,11 @@ public sealed partial class DfmConverter
 
     [GeneratedRegex(@"\n{3,}")]
     private static partial Regex ExcessiveBlankLines();
+
+    /// <summary>
+    /// Matches a non-blank, non-list line (group 1) immediately followed (no blank line) by a
+    /// bullet or numbered list line (group 2). Used to inject the missing blank separator.
+    /// </summary>
+    [GeneratedRegex(@"(^(?!\s*[-*+]|\s*\d+\.)(?!\s*$).+)\n([ \t]*(?:[-*+]|\d+\.)[ \t])", RegexOptions.Multiline)]
+    private static partial Regex ListWithoutPrecedingBlankLine();
 }

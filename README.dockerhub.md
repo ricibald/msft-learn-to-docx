@@ -59,3 +59,9 @@ docker run --rm \
 ## Source
 
 [github.com/ricibald/msft-learn-to-docx](https://github.com/ricibald/msft-learn-to-docx)
+
+## Content License & Legal Notice
+
+Training content is fetched from the **[MicrosoftDocs/learn](https://github.com/MicrosoftDocs/learn)** public GitHub repository via the official GitHub API — **not web scraping**.
+
+The Microsoft Learn content is licensed under **[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)**. Every generated document automatically includes the required attribution (author, copyright notice, license URI, and source URL) in both the document properties (YAML frontmatter → Word metadata) and as a visible blockquote at the top of the document body.

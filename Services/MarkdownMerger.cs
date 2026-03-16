@@ -12,22 +12,79 @@ public sealed partial class MarkdownMerger
 {
     /// <summary>
     /// Merges multiple <see cref="DownloadedContent"/> blocks into a single markdown string
-    /// with YAML frontmatter (title, date) for Word cover page.
+    /// with YAML frontmatter (title, date, author, attribution metadata) for Word cover page.
     /// Heading hierarchy: Module = H1, Unit = H2, content headings = H3+.
     /// </summary>
-    public string Merge(IReadOnlyList<DownloadedContent> contents, string? documentTitle = null, DateTime? date = null)
+    /// <param name="sourceUrls">Original learn.microsoft.com URLs — included in the CC BY 4.0 attribution.</param>
+    public string Merge(IReadOnlyList<DownloadedContent> contents, string? documentTitle = null, DateTime? date = null, IReadOnlyList<string>? sourceUrls = null)
     {
         var sb = new StringBuilder();
 
-        // YAML frontmatter for pandoc title block (renders as Word cover page)
+        // YAML frontmatter for pandoc title block (renders as Word cover page + document properties)
         var title = documentTitle
             ?? (contents.Count == 1 ? contents[0].Title : string.Join(" / ", contents.Select(c => c.Title)));
         var dateStr = (date ?? DateTime.Now).ToString("yyyy-MM-dd");
 
+        // subtitle: source attribution reference (short, renders well as Word subtitle)
+        var subtitle = sourceUrls?.Count > 0
+            ? $"Source: {string.Join(" | ", sourceUrls)}"
+            : "Source: https://learn.microsoft.com";
+
+        // keywords: module titles represent the topics covered
+        var keywords = contents
+            .SelectMany(c => c.Modules)
+            .Select(m => m.Title)
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .Distinct()
+            .ToList();
+
+        // CC BY 4.0: identify creator, include copyright notice, reference license, include URI to source
+        var sourceList = sourceUrls?.Count > 0
+            ? string.Join(", ", sourceUrls)
+            : "https://learn.microsoft.com";
+        var attributionDescription = $"Content © Microsoft Corporation, licensed under CC BY 4.0 " +
+            $"(https://creativecommons.org/licenses/by/4.0/). " +
+            $"Source: {sourceList}. " +
+            $"Adapted for offline use — original content unmodified except for format conversion.";
+
         sb.AppendLine("---");
         sb.AppendLine($"title: \"{EscapeYaml(title)}\"");
+        sb.AppendLine($"subtitle: \"{EscapeYaml(subtitle)}\"");
+        sb.AppendLine("author:");
+        sb.AppendLine("  - \"Microsoft Corporation\"");
         sb.AppendLine($"date: {dateStr}");
+        if (keywords.Count > 0)
+        {
+            sb.AppendLine("keywords:");
+            foreach (var kw in keywords)
+                sb.AppendLine($"  - \"{EscapeYaml(kw)}\"");
+        }
+        sb.AppendLine("subject: \"Microsoft Learn\"");
+        sb.AppendLine($"description: \"{EscapeYaml(attributionDescription)}\"");
         sb.AppendLine("---");
+        sb.AppendLine();
+
+        // Visible attribution notice in document body (required by CC BY 4.0 Section 3(a))
+        sb.AppendLine("> **Attribution**: Content originally published on [Microsoft Learn](https://learn.microsoft.com), " +
+            "© Microsoft Corporation, licensed under " +
+            "[Creative Commons Attribution 4.0 International (CC BY 4.0)](https://creativecommons.org/licenses/by/4.0/). " +
+            "Adapted for offline use — original content unmodified except for format conversion.");
+        if (sourceUrls?.Count > 0)
+        {
+            if (sourceUrls.Count == 1)
+            {
+                sb.AppendLine(">");
+                sb.AppendLine($"> **Source**: <{sourceUrls[0]}>");
+            }
+            else
+            {
+                sb.AppendLine(">");
+                sb.AppendLine("> **Source**:");
+                sb.AppendLine(">");
+                foreach (var url in sourceUrls)
+                    sb.AppendLine($"> - <{url}>");
+            }
+        }
         sb.AppendLine();
 
         foreach (var content in contents)
