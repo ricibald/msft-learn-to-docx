@@ -21,6 +21,19 @@ docker run --rm \
 
 Output is written to `./output/{slug}_{timestamp}/` on the host.
 
+## Why Use This?
+
+**Turn Microsoft Learn into enterprise or personal knowledge** — offline, versioned, distributable.
+
+- 📚 **Offline reading** — complete learning paths as standalone DOCX/Markdown  
+- 🏢 **Enterprise-ready** — Word templates, metadata, CC BY 4.0 attribution included  
+- 🤖 **AI-ready** — structured content for embeddings and RAG systems  
+- 🔗 **Merge multiple paths** — combine URLs into one unified document  
+- 🐳 **Zero dependencies** — Docker handles pandoc, .NET, all requirements  
+- ♻️ **Smart caching** — repeated runs reuse cached data, instant subsequent conversions  
+
+For full details and use cases → [GitHub repo](https://github.com/ricibald/msft-learn-to-docx)
+
 ## Multiple URLs
 
 ```bash

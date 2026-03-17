@@ -3,6 +3,8 @@
 [![Docker Pulls](https://img.shields.io/docker/pulls/ricibald/msft-learn-to-docx)](https://hub.docker.com/r/ricibald/msft-learn-to-docx)
 [![Docker Image Size](https://img.shields.io/docker/image-size/ricibald/msft-learn-to-docx/latest)](https://hub.docker.com/r/ricibald/msft-learn-to-docx)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-blue.svg)](#prerequisites)
+[![Actively Maintained](https://img.shields.io/badge/Actively%20Maintained-Yes-green.svg)](#)
 
 .NET 8 console app that converts Microsoft Learn training paths and modules into a unified Markdown document and a Word (DOCX) file via **pandoc**.
 
@@ -57,6 +59,242 @@ docker run --rm `
 > The named Docker volume persists between container restarts automatically.
 
 Output is written to `./output/{slug}_{timestamp}/` on the host.
+
+---
+
+## Why This Tool?
+
+### 1. **Offline Learning & Knowledge Preservation**
+
+Microsoft Learn is web-first and volatile. Content changes over time, URLs shift, and online access isn't always available.
+
+**Use case**: Download complete learning paths as self-contained DOCX files — printable, shareable, and stable.
+
+- ✓ Consume content without internet
+- ✓ Create personal knowledge archives
+- ✓ Share with colleagues without dependency on external links
+
+---
+
+### 2. **Enterprise Compliance & Governance**
+
+In regulated environments (finance, healthcare, public sector), you need:
+
+- **Versioned, frozen documentation** for audit trails
+- **Controlled distribution** via corporate systems (SharePoint, LMS, intranet)
+- **Standardized formatting** to match corporate branding
+- **Full attribution tracking** for legal compliance
+
+**Use case**: Generate DOCX with boilerplate compliance footer, distribute via trusted channels, and maintain version history.
+
+- ✓ Word documents with corporate templates
+- ✓ Embedded metadata (author, subject, keywords)
+- ✓ Automatic CC BY 4.0 attribution (learn repos are licensed)
+- ✓ Snapshot content at a specific date
+
+---
+
+### 3. **Automation & CI/CD Integration**
+
+If you embed this in your training or documentation pipeline:
+
+```bash
+# Regenerate documentation on every release
+git push → GitHub Actions → Docker → DOCX → SharePoint/LMS
+```
+
+**Use case**: Automate training material updates whenever Learn paths change.
+
+- ✓ No manual copy-paste
+- ✓ One-command batch conversions
+- ✓ Fit into DevOps workflows (GitHub Actions, Azure DevOps, GitLab CI)
+- ✓ Docker image = zero dependency hell
+
+---
+
+### 4. **RAG / AI-Ready Knowledge Base**
+
+This is the strategic use case: transform Learn into a **structured corpus** for:
+
+- Embedding + vector search (Qdrant, Pinecone, Azure AI Search)
+- Chatbot grounding (OpenAI, Claude, Copilot)
+- Internal knowledge base + RAG orchestration
+
+**Use case**: Convert path → DOCX → extract sections → embed → feed to chatbot.
+
+```text
+Microsoft Learn URLs
+        ↓
+  DOCX + Markdown
+        ↓
+Sections + metadata
+        ↓
+Vector embeddings
+        ↓
+RAG system / LLM
+```
+
+- ✓ Get structured content with metadata (titles, headings, source URLs)
+- ✓ Split into chunks ready for embedding
+- ✓ Include automatic attribution links for source verification
+
+---
+
+### 5. **Content Curation & Reuse**
+
+Microsoft Learn is modular but scattered. You might want to:
+
+- **Merge multiple paths** into one document (e.g., "GitHub Copilot 101 to Advanced")
+- **Create custom curricula** by combining modules from different paths
+- **Apply custom branding** or add internal context
+
+**Use case**: Combine official Learn paths + add internal procedures → unified training material.
+
+- ✓ Merge multiple URLs into one document
+- ✓ Apply custom title and templates
+- ✓ Add internal footnotes/edits later in Word
+
+---
+
+### 6. **Transparent, Ethical Content Handling**
+
+The MicrosoftDocs/learn repo is **public and licensed under CC BY 4.0**. This tool respects that:
+
+- Uses official GitHub APIs (not scraping)
+- Automatically embeds required attribution
+- Preserves content integrity (no modification)
+
+**Use case**: Reuse training assets correctly, with full transparency and legal compliance.
+
+- ✓ Proper attribution embedded in every document
+- ✓ License URI and source URLs preserved
+- ✓ No risk of copyright violations
+
+---
+
+## Practical Workflows & Templates
+
+### Compliance Training Material (Enterprise)
+
+**Scenario**: You need to distribute Microsoft AI training to compliance-sensitive teams with proper versioning and attribution.
+
+**Setup**:
+
+```bash
+# Generate versioned DOCX with corporate template
+dotnet run -- \
+  "https://learn.microsoft.com/en-us/training/modules/responsible-ai/" \
+  --title "Enterprise AI Ethics Training - v1.0" \
+  --template ./Templates/corporate-template.docx \
+  -o ./compliance-docs/ai-ethics-v1.0
+```
+
+**Output structure**:
+
+```text
+compliance-docs/ai-ethics-v1.0/
+├── responsible-ai.docx          # Ready for LMS upload
+├── responsible-ai.md            # Version control in Git
+└── media/                        # All images embedded
+```
+
+**Next steps**:
+
+- Upload DOCX to SharePoint with metadata (date, version, author)
+- Tag in Git: `git tag compliance/ai-ethics-v1.0`
+- Archive previous versions: `s3://archive/compliance/...`
+
+---
+
+### Internal Chatbot / RAG Training Corpus
+
+**Scenario**: Build a Copilot-aware chatbot grounded in official Learn content.
+
+**Setup**:
+
+```bash
+# Generate markdown for chunking/embedding
+dotnet run -- \
+  "https://learn.microsoft.com/en-us/training/modules/introduction-to-github-copilot/" \
+  --format md \
+  -o ./ragcorpus/copilot-intro
+```
+
+**Processing pipeline**:
+
+```bash
+# 1. Extract markdown
+cat ragcorpus/copilot-intro/introduction-to-github-copilot.md
+
+# 2. Split into sections (e.g., H2 boundaries)
+# Custom script: section-splitter.py → JSON chunks with metadata
+
+# 3. Embed & store in vector DB
+# curl -X POST http://qdrant-service/collections/learn/points \
+#   -H "Content-Type: application/json" \
+#   -d @chunks.jsonl
+
+# 4. Integrate RAG query in your orchestrator
+# LLM context: "Answer using official Microsoft Learn: [retrieved chunks]"
+```
+
+**Metadata in output**:
+
+- `title` → chunk heading
+- `source_url` → link back to learn.microsoft.com
+- `timestamp` → when content was captured
+
+---
+
+### Multi-Path Curriculum
+
+**Scenario**: Create a "GitHub Copilot Bootcamp" by merging 3 learning paths into one document.
+
+**Setup**:
+
+```bash
+dotnet run -- \
+  "https://learn.microsoft.com/en-us/training/paths/copilot/" \
+  "https://learn.microsoft.com/en-us/training/paths/github-copilot-2/" \
+  "https://learn.microsoft.com/en-us/training/modules/responsible-ai/" \
+  --title "GitHub Copilot Bootcamp: From Basics to Advanced Extensions" \
+  -o ./bootcamp
+```
+
+**Result**: Single DOCX with:
+
+- Title page (custom title)
+- Table of Contents (auto-generated)
+- 3 paths merged with preserved heading hierarchy
+- All media embedded
+- Single source attribution per CC BY 4.0
+
+---
+
+### Offline Knowledge Archive
+
+**Scenario**: Developer downloads 10 learning paths for offline reference on a flight.
+
+**Setup**:
+
+```powershell
+# PowerShell script: batch-download.ps1
+$paths = @(
+  "https://learn.microsoft.com/en-us/training/paths/copilot/",
+  "https://learn.microsoft.com/en-us/training/paths/git-github/",
+  "https://learn.microsoft.com/en-us/training/paths/az-ai-engineer/"
+)
+
+foreach ($path in $paths) {
+  docker run --rm `
+    -v "${PWD}/archive:/output" `
+    -v archive-cache:/cache `
+    ricibald/msft-learn-to-docx `
+    $path
+}
+```
+
+**Result**: Archive with 10 independent DOCX files, ready for offline use.
 
 ---
 
@@ -215,6 +453,25 @@ Handled Docs-Flavored Markdown syntax:
 - `[!VIDEO url]` → link
 - `:::code language="..." source="...":::` → downloads source from GitHub, inlines with `range` support
 - `[!INCLUDE[](path)]` residuals → removed
+
+## Antipatterns & Common Mistakes
+
+### ❌ Don't...
+
+- **Dump everything indiscriminately**: Converting all Learn paths without curation → bloated, unusable documents
+- **Set and forget**: Generated content is a point-in-time snapshot — outdated material isn't valuable
+- **Skip attribution**: The CC BY 4.0 license is strict — every distribution must include proper attribution
+- **Rely entirely on offline copies**: Learn is the source of truth — use DOCX as a snapshot, not a replacement
+
+### ✓ Do...
+
+- **Select relevant paths/modules** — focus on what you actually need
+- **Version your outputs** (e.g., `Copilot-Guide-v1.0.docx`, `Copilot-Guide-v1.1.docx`)
+- **Integrate into a refresh cadence** — regenerate quarterly or when Learn updates
+- **Add internal context** — include company-specific guidance, examples, or procedures
+- **Use templates** — apply corporate branding for consistency
+
+---
 
 ## Project Structure
 
