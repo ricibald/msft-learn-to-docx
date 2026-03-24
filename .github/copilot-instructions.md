@@ -121,7 +121,7 @@
 ### Testing
 - xUnit test project at `Tests/MsftLearnToDocx.Tests.csproj`, added to solution
 - **IMPORTANT**: Main `MsftLearnToDocx.csproj` excludes `Tests\**` via `DefaultItemExcludes` to prevent SDK glob from including test files in the main compilation
-- Test files: `DocsUrlParserTests.cs` (URL parsing + LiveSiteUrl, 15 tests), `GitHubRawClientTests.cs` (LFS pointer detection/parsing via reflection), `TocEntryTests.cs` (model tests), `DfmConverterTests.cs` (DFM→MD conversion, zone pivots with spaces, HR blank lines, 26 tests), `MarkdownMergerTests.cs` (heading hierarchy, TOC-based docs-site hierarchy, frontmatter, subject, attribution, download summary, placeholders, duplicate title removal, 23 tests), `DocsDownloaderTests.cs` (StripFrontmatter, StripHtmlBlocks, SanitizeImageFileName, ResolveRelativePath, DeriveTitleFromPath, 12 tests)
+- Test files: `DocsUrlParserTests.cs` (URL parsing + LiveSiteUrl, 15 tests), `GitHubRawClientTests.cs` (LFS pointer detection/parsing via reflection), `TocEntryTests.cs` (model tests), `DfmConverterTests.cs` (DFM→MD conversion, zone pivots with spaces, HR blank lines, image title stripping, 27 tests), `MarkdownMergerTests.cs` (heading hierarchy, TOC-based docs-site hierarchy, frontmatter, subject, attribution, download summary, placeholders, duplicate title removal, 23 tests), `DocsDownloaderTests.cs` (StripFrontmatter, StripHtmlBlocks, SanitizeImageFileName, ResolveRelativePath, DeriveTitleFromPath, trailing HR removal, 13 tests)
 - Run tests: `dotnet test Tests/MsftLearnToDocx.Tests.csproj`
 - CI: `.github/workflows/ci.yml` — .NET 8 build + test on every push/PR
 

@@ -519,7 +519,7 @@ public sealed partial class DocsDownloader
     [GeneratedRegex(@"\[!(?:i|I)(?:nclude|NCLUDE)\[([^\]]*)\]\(([^)]+)\)\]")]
     private static partial Regex IncludeRefRegex();
 
-    [GeneratedRegex(@"!\[([^\]]*)\]\(([^)]+)\)", RegexOptions.Compiled)]
+    [GeneratedRegex(@"!\[([^\]]*)\]\(([^\s\)""]+)(?:\s+""[^""]*"")?\)", RegexOptions.Compiled)]
     private static partial Regex StandardImageRegex();
 
     [GeneratedRegex(@"<img\s[^>]*src\s*=\s*""([^""]+)""[^>]*/?>", RegexOptions.IgnoreCase | RegexOptions.Compiled)]

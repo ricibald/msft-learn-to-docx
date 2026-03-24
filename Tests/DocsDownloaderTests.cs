@@ -118,4 +118,35 @@ public class DocsDownloaderTests
         Assert.Equal("Documentation",
             DocsDownloader.DeriveTitleFromPath(""));
     }
+
+    // --- Merge trailing HR removal ---
+
+    [Fact]
+    public void Merge_DocsSite_NoTrailingHorizontalRule()
+    {
+        var merger = new MarkdownMerger();
+        var content = new MsftLearnToDocx.Models.DownloadedContent
+        {
+            Title = "Test",
+            Type = MsftLearnToDocx.Models.ContentType.DocsSite,
+            Modules =
+            [
+                new MsftLearnToDocx.Models.DownloadedModule
+                {
+                    Title = "Test",
+                    Units =
+                    [
+                        new MsftLearnToDocx.Models.DownloadedUnit
+                        {
+                            Title = "Last Page",
+                            MarkdownContent = "Final content"
+                        }
+                    ]
+                }
+            ]
+        };
+        var result = merger.Merge([content], date: new DateTime(2025, 1, 1));
+        var trimmed = result.TrimEnd();
+        Assert.False(trimmed.EndsWith("---"), "Merged output should not end with a trailing horizontal rule");
+    }
 }

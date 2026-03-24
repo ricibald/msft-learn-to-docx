@@ -226,7 +226,7 @@ public sealed partial class DfmConverter
     [GeneratedRegex(@"source=""([^""]+)""", RegexOptions.IgnoreCase)]
     private static partial Regex ImageSourceRegex();
 
-    [GeneratedRegex(@"!\[[^\]]*\]\(([^)]+)\)", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"!\[[^\]]*\]\(([^\s\)""]+)(?:\s+""[^""]*"")?\)", RegexOptions.IgnoreCase)]
     private static partial Regex StandardImageRegex();
 
     [GeneratedRegex(@"^(>\s*)\[!(NOTE|TIP|WARNING|IMPORTANT|CAUTION)\]\s*$", RegexOptions.Multiline | RegexOptions.IgnoreCase)]

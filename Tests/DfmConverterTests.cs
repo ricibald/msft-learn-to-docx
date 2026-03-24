@@ -251,6 +251,15 @@ public class DfmConverterTests
         Assert.DoesNotContain("https://example.com/img.png", paths);
     }
 
+    [Fact]
+    public void ExtractMediaPaths_StripsOptionalTitleFromImagePath()
+    {
+        var markdown = """![User settings](../media/generate-token.png "User settings")""";
+        var paths = DfmConverter.ExtractMediaPaths(markdown);
+        Assert.Single(paths);
+        Assert.Equal("../media/generate-token.png", paths[0]);
+    }
+
     // --- ExtractCodeSourcePaths ---
 
     [Fact]

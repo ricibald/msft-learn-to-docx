@@ -189,7 +189,13 @@ public sealed partial class MarkdownMerger
             }
         }
 
-        return sb.ToString();
+        // Remove trailing horizontal rule if present (avoids empty --- at end of document)
+        var result = sb.ToString();
+        var trimmedEnd = result.TrimEnd();
+        if (trimmedEnd.EndsWith("---", StringComparison.Ordinal))
+            result = trimmedEnd[..^3].TrimEnd() + "\n";
+
+        return result;
     }
 
     /// <summary>
