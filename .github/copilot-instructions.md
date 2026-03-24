@@ -72,10 +72,11 @@
 - `ContentDownloader`: downloads Learn training content (paths + modules + units). Accepts `LearnCatalogClient` for Catalog API lookups. Handles unresolvable modules gracefully via `DownloadModuleByUidSafeAsync` (placeholder with warning in document)
 - `ModuleResolver`: heuristic parent dir (from uid prefix) + fallback full scan of learn-pr/
 - `DfmConverter`: regex-based, converts :::image:::, [!NOTE], [!div], :::zone:::, [!VIDEO], :::code:::, etc. Also runs `EnsureBlankLineBeforeLists` to inject a blank line before any list block that immediately follows a paragraph (prevents pandoc from rendering bullets as inline text).
-- `MarkdownMerger`: YAML frontmatter generation + CC BY 4.0 attribution. Two merge modes:
+- `MarkdownMerger`: YAML frontmatter generation + CC BY 4.0 attribution + download summary section. Two merge modes:
   - **Learn training**: Module = H1, Unit = H2, content = H3+ (heading shift applied)
   - **Docs site**: original headings preserved, pages separated by `---` horizontal rules
   - `subject` field is dynamic based on content types present
+  - **Download Summary** section after attribution: module/unit counts + list of unavailable modules (detected by `.unavailable` unit UID suffix)
 - `DownloadedContent`: model with `Title`, `IsPath`, `Type` (`LearnTraining | DocsSite`), `Modules` list
 - `PandocRunner`: invokes pandoc with `--toc`, `--toc-depth`, `--reference-doc`, `--resource-path`
 - `CachingHandler`: file-based HTTP cache (24h TTL), caches 200 OK only, SHA256 hashed URLs as keys
@@ -115,7 +116,7 @@
 ### Testing
 - xUnit test project at `Tests/MsftLearnToDocx.Tests.csproj`, added to solution
 - **IMPORTANT**: Main `MsftLearnToDocx.csproj` excludes `Tests\**` via `DefaultItemExcludes` to prevent SDK glob from including test files in the main compilation
-- Test files: `DocsUrlParserTests.cs` (URL parsing, 12 tests), `GitHubRawClientTests.cs` (LFS pointer detection/parsing via reflection), `TocEntryTests.cs` (model tests), `DfmConverterTests.cs` (DFM→MD conversion, 20 tests), `MarkdownMergerTests.cs` (heading hierarchy, frontmatter, subject, attribution, 13 tests), `DocsDownloaderTests.cs` (StripFrontmatter, StripHtmlBlocks, SanitizeImageFileName, ResolveRelativePath, DeriveTitleFromPath, 12 tests)
+- Test files: `DocsUrlParserTests.cs` (URL parsing, 12 tests), `GitHubRawClientTests.cs` (LFS pointer detection/parsing via reflection), `TocEntryTests.cs` (model tests), `DfmConverterTests.cs` (DFM→MD conversion, 20 tests), `MarkdownMergerTests.cs` (heading hierarchy, frontmatter, subject, attribution, download summary, placeholders, 17 tests), `DocsDownloaderTests.cs` (StripFrontmatter, StripHtmlBlocks, SanitizeImageFileName, ResolveRelativePath, DeriveTitleFromPath, 12 tests)
 - Run tests: `dotnet test Tests/MsftLearnToDocx.Tests.csproj`
 - CI: `.github/workflows/ci.yml` — .NET 8 build + test on every push/PR
 

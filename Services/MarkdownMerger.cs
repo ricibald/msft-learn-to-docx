@@ -91,6 +91,39 @@ public sealed partial class MarkdownMerger
             sb.AppendLine();
         }
 
+        // Download summary section
+        var allModules = contents.SelectMany(c => c.Modules).ToList();
+        var allUnits = allModules.SelectMany(m => m.Units)
+            .Where(u => !u.Uid.EndsWith(".unavailable", StringComparison.Ordinal))
+            .ToList();
+        var unavailableModules = allModules
+            .Where(m => m.Units.Any(u => u.Uid.EndsWith(".unavailable", StringComparison.Ordinal)))
+            .ToList();
+        var totalImages = allUnits
+            .SelectMany(u => DfmConverter.ExtractMediaPaths(u.MarkdownContent))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Count();
+        var totalQuizzes = allUnits.Count(u => u.IsQuiz);
+
+        sb.AppendLine("# Download Summary");
+        sb.AppendLine();
+        sb.AppendLine($"- **{allModules.Count - unavailableModules.Count}/{allModules.Count}** modules downloaded");
+        sb.AppendLine($"- **{allUnits.Count}** units processed");
+        if (totalQuizzes > 0)
+            sb.AppendLine($"- **{totalQuizzes}** knowledge checks");
+        if (totalImages > 0)
+            sb.AppendLine($"- **{totalImages}** images");
+        sb.AppendLine($"- **{contents.Count}** source(s)");
+        if (unavailableModules.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"> **⚠ {unavailableModules.Count} module(s) could not be downloaded:**");
+            sb.AppendLine(">");
+            foreach (var m in unavailableModules)
+                sb.AppendLine($"> - {m.Title} (`{m.Uid}`)");
+        }
+        sb.AppendLine();
+
         foreach (var content in contents)
         {
             if (content.Type == ContentType.DocsSite)

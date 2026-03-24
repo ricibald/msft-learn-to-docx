@@ -223,6 +223,83 @@ public class MarkdownMergerTests
         Assert.Contains("⚠ Module not available", result);
     }
 
+    // --- Download summary ---
+
+    [Fact]
+    public void Merge_DownloadSummary_ShowsModuleCounts()
+    {
+        var content = CreateContent("Module", ContentType.LearnTraining, ("U1", "text"), ("U2", "![img](media/pic.png)"));
+        var result = _merger.Merge([content], date: new DateTime(2025, 1, 1));
+        Assert.Contains("# Download Summary", result);
+        Assert.Contains("**1/1** modules downloaded", result);
+        Assert.Contains("**2** units processed", result);
+        Assert.Contains("**1** images", result);
+    }
+
+    [Fact]
+    public void Merge_DownloadSummary_UnavailableModulesListed()
+    {
+        var content = new DownloadedContent
+        {
+            Title = "Path",
+            IsPath = true,
+            Type = ContentType.LearnTraining,
+            Modules =
+            [
+                new DownloadedModule
+                {
+                    Title = "OK Module",
+                    Uid = "learn.ok",
+                    Units = [new DownloadedUnit { Title = "U1", Uid = "learn.ok.u1", MarkdownContent = "text" }]
+                },
+                new DownloadedModule
+                {
+                    Title = "Missing Module",
+                    Uid = "learn-bizapps.missing",
+                    Units =
+                    [
+                        new DownloadedUnit
+                        {
+                            Title = "Content Unavailable",
+                            Uid = "learn-bizapps.missing.unavailable",
+                            MarkdownContent = "> warning"
+                        }
+                    ]
+                }
+            ]
+        };
+        var result = _merger.Merge([content], date: new DateTime(2025, 1, 1));
+        Assert.Contains("**1/2** modules downloaded", result);
+        Assert.Contains("**1** units processed", result);
+        Assert.Contains("1 module(s) could not be downloaded", result);
+        Assert.Contains("Missing Module (`learn-bizapps.missing`)", result);
+    }
+
+    [Fact]
+    public void Merge_DownloadSummary_IncludesQuizCount()
+    {
+        var content = new DownloadedContent
+        {
+            Title = "Module",
+            Type = ContentType.LearnTraining,
+            Modules =
+            [
+                new DownloadedModule
+                {
+                    Title = "Module",
+                    Uid = "learn.mod",
+                    Units =
+                    [
+                        new DownloadedUnit { Title = "Intro", Uid = "learn.mod.intro", MarkdownContent = "text" },
+                        new DownloadedUnit { Title = "Quiz", Uid = "learn.mod.quiz", MarkdownContent = "Q1", IsQuiz = true }
+                    ]
+                }
+            ]
+        };
+        var result = _merger.Merge([content], date: new DateTime(2025, 1, 1));
+        Assert.Contains("**1** knowledge checks", result);
+    }
+
     // --- Helper ---
 
     private static DownloadedContent CreateContent(string title, ContentType type, params (string Title, string Content)[] units)

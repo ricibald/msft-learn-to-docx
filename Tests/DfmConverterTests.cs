@@ -25,6 +25,21 @@ public class DfmConverterTests
     }
 
     [Fact]
+    public void Convert_ImageFromImagesDir_PathMapperReceivesOriginalDir()
+    {
+        var input = """:::image type="content" source="../images/load-balancer-types.png" alt-text="LB types" border="false":::""";
+        var receivedPaths = new List<string>();
+        var result = _converter.Convert(input, mediaPathMapper: p =>
+        {
+            receivedPaths.Add(p);
+            return $"media/M1_{Path.GetFileName(p)}";
+        });
+        Assert.Single(receivedPaths);
+        Assert.Equal("../images/load-balancer-types.png", receivedPaths[0]);
+        Assert.Contains("media/M1_load-balancer-types.png", result);
+    }
+
+    [Fact]
     public void Convert_ImageWithoutSource_RemovesBlock()
     {
         var input = """:::image alt-text="no source":::""";
