@@ -502,8 +502,11 @@ The mapping between module UID and GitHub path is non-deterministic. Known excep
 | `learn.github-copilot-with-javascript` | `introduction-copilot-javascript` | slug ≠ uid, no provider |
 | `learn.wwl.*` | `learn-pr/wwl-azure/` | wwl ≠ wwl-azure |
 | `learn.advanced-github-copilot` | `learn-pr/github/` | no provider in uid |
+| `learn-bizapps.*` | `MicrosoftDocs/learn-bizapps-pr` (private) | cross-repo, placeholder generated |
 
 **Strategy**: Learn Catalog API (`url` field) → real directory name → GitHub Contents API scan for parent directory.
+
+> **Cross-repo modules**: some learning paths reference modules from private repos (e.g., `learn-bizapps.*` → `MicrosoftDocs/learn-bizapps-pr`). These modules cannot be downloaded. The tool creates a placeholder entry in the output document with a warning and a link to view the module online. A console summary shows how many modules were skipped.
 
 ### DFM → Standard Markdown Conversion
 

@@ -57,6 +57,11 @@ public sealed class ContentDownloader
             content.Modules.Add(module);
         }
 
+        // Summary
+        var skipped = content.Modules.Count(m => m.Units.Any(u => u.Uid.EndsWith(".unavailable", StringComparison.Ordinal)));
+        if (skipped > 0)
+            Console.WriteLine($"\n  ⚠ {content.Modules.Count - skipped}/{content.Modules.Count} modules downloaded, {skipped} skipped (unavailable content)");
+
         return content;
     }
 
@@ -98,7 +103,7 @@ public sealed class ContentDownloader
 
             return await DownloadModuleInternalAsync(moduleYaml, modulePath, outputDir, moduleIndex);
         }
-        catch (InvalidOperationException ex)
+        catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException)
         {
             Console.WriteLine($"\n  [WARN] Cannot download module '{moduleUid}': {ex.Message}");
             Console.WriteLine($"  [WARN] The module will appear as a placeholder in the output document.");
@@ -108,11 +113,15 @@ public sealed class ContentDownloader
 
             var uidParts = moduleUid.Split('.');
             var learnUrl = $"https://learn.microsoft.com/training/modules/{uidParts[^1]}/";
+
+            var reason = ex is HttpRequestException
+                ? "an HTTP error occurred while downloading its content from GitHub."
+                : "its source content is hosted in a private repository that is not publicly accessible.";
+
             var warningContent =
                 $"> **⚠ Module not available for download**\n" +
                 $">\n" +
-                $"> This module (*{moduleUid}*) could not be downloaded because its source content " +
-                $"is hosted in a private repository that is not publicly accessible.\n" +
+                $"> This module (*{moduleUid}*) could not be downloaded because {reason}\n" +
                 $">\n" +
                 $"> You can view this module online at: <{learnUrl}>";
 
@@ -161,6 +170,9 @@ public sealed class ContentDownloader
             Uid = moduleYaml.Uid
         };
 
+        // Track original media directory per file (e.g., "images" or "media")
+        var mediaOrigins = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
         // List unit YAML files in the module directory
         var unitFiles = await GetUnitFilesAsync(modulePath);
 
@@ -183,7 +195,7 @@ public sealed class ContentDownloader
             var unitYamlStr = await _github.DownloadStringAsync($"{modulePath}/{unitFileName}");
             var unitYaml = _yaml.Deserialize<UnitYaml>(unitYamlStr);
 
-            var downloadedUnit = await ProcessUnitAsync(unitYaml, modulePath, outputDir, moduleIndex);
+            var downloadedUnit = await ProcessUnitAsync(unitYaml, modulePath, moduleIndex, mediaOrigins);
             if (downloadedUnit is not null)
             {
                 downloadedModule.Units.Add(downloadedUnit);
@@ -196,15 +208,32 @@ public sealed class ContentDownloader
         }
 
         // Download media files
-        await DownloadMediaAsync(modulePath, outputDir, moduleIndex, downloadedModule);
+        await DownloadMediaAsync(modulePath, outputDir, moduleIndex, downloadedModule, mediaOrigins);
 
         return downloadedModule;
     }
 
     private async Task<DownloadedUnit?> ProcessUnitAsync(
-        UnitYaml unitYaml, string modulePath, string outputDir, int moduleIndex)
+        UnitYaml unitYaml, string modulePath, int moduleIndex,
+        Dictionary<string, string> mediaOrigins)
     {
         var content = unitYaml.Content?.Trim() ?? "";
+
+        // Media path mapper that also tracks the original source directory
+        string MapAndTrackMediaPath(string originalPath)
+        {
+            var mapped = MapMediaPath(originalPath, moduleIndex);
+            var fileName = Path.GetFileName(mapped);
+            if (!mediaOrigins.ContainsKey(fileName))
+            {
+                // Extract directory from original: "../images/foo.png" → "images"
+                var dir = Path.GetDirectoryName(originalPath)?.Replace('\\', '/');
+                var lastSegment = dir?.Split('/').LastOrDefault(s => !string.IsNullOrEmpty(s));
+                if (!string.IsNullOrEmpty(lastSegment))
+                    mediaOrigins[fileName] = lastSegment;
+            }
+            return mapped;
+        }
 
         // Case 1: Include reference — [!include[](includes/xxx.md)]
         var includeMatch = Regex.Match(content, @"\[!include\[\]\(([^)]+)\)\]", RegexOptions.IgnoreCase);
@@ -219,7 +248,7 @@ public sealed class ContentDownloader
 
             // Convert DFM to standard markdown
             var converted = _dfmConverter.Convert(markdown,
-                mediaPath => MapMediaPath(mediaPath, moduleIndex),
+                MapAndTrackMediaPath,
                 codeContents);
 
             return new DownloadedUnit
@@ -260,8 +289,7 @@ public sealed class ContentDownloader
             return null;
 
         // Case 4: Other content (just include as-is after DFM conversion)
-        var dfmConverted = _dfmConverter.Convert(content, mediaPath =>
-            MapMediaPath(mediaPath, moduleIndex));
+        var dfmConverted = _dfmConverter.Convert(content, MapAndTrackMediaPath);
 
         return new DownloadedUnit
         {
@@ -272,7 +300,8 @@ public sealed class ContentDownloader
     }
 
     private async Task DownloadMediaAsync(
-        string modulePath, string outputDir, int moduleIndex, DownloadedModule module)
+        string modulePath, string outputDir, int moduleIndex, DownloadedModule module,
+        Dictionary<string, string> mediaOrigins)
     {
         // Collect all media paths from all units
         var mediaPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -295,15 +324,15 @@ public sealed class ContentDownloader
             var localFileName = Path.GetFileName(mediaRelPath);
             var localPath = Path.Combine(outputDir, mediaRelPath.Replace('/', Path.DirectorySeparatorChar));
 
-            // Resolve the GitHub path: the media path in converted markdown is "media/M{idx}_file"
-            // The original path in the markdown was "../media/file" (relative to includes/)
-            // which corresponds to "{modulePath}/media/file" on GitHub
+            // Resolve the GitHub path from the original source directory
+            // Some modules use "images/" instead of "media/"
             var originalFileName = localFileName;
             var prefix = $"M{moduleIndex}_";
             if (originalFileName.StartsWith(prefix))
                 originalFileName = originalFileName[prefix.Length..];
 
-            var githubMediaPath = $"{modulePath}/media/{originalFileName}";
+            var sourceDir = mediaOrigins.GetValueOrDefault(localFileName, "media");
+            var githubMediaPath = $"{modulePath}/{sourceDir}/{originalFileName}";
             await _github.DownloadFileAsync(githubMediaPath, localPath);
         }
     }

@@ -150,6 +150,79 @@ public class MarkdownMergerTests
         Assert.Contains("\"Module Alpha\"", result);
     }
 
+    // --- Placeholder modules ---
+
+    [Fact]
+    public void Merge_PlaceholderModule_RendersWarningBlockquote()
+    {
+        var content = new DownloadedContent
+        {
+            Title = "Test Path",
+            IsPath = true,
+            Type = ContentType.LearnTraining,
+            Modules =
+            [
+                new DownloadedModule
+                {
+                    Title = "Azure Policy initiatives",
+                    Uid = "learn-bizapps.sovereignty-policy-initiatives",
+                    Units =
+                    [
+                        new DownloadedUnit
+                        {
+                            Title = "Content Unavailable",
+                            Uid = "learn-bizapps.sovereignty-policy-initiatives.unavailable",
+                            MarkdownContent = "> **⚠ Module not available for download**\n>\n> This module (*learn-bizapps.sovereignty-policy-initiatives*) could not be downloaded."
+                        }
+                    ]
+                }
+            ]
+        };
+        var result = _merger.Merge([content], date: new DateTime(2025, 1, 1));
+        Assert.Contains("# Azure Policy initiatives", result);
+        Assert.Contains("## Content Unavailable", result);
+        Assert.Contains("⚠ Module not available for download", result);
+    }
+
+    [Fact]
+    public void Merge_MixedModules_PlaceholderAndNormal_BothRendered()
+    {
+        var content = new DownloadedContent
+        {
+            Title = "Test Path",
+            IsPath = true,
+            Type = ContentType.LearnTraining,
+            Modules =
+            [
+                new DownloadedModule
+                {
+                    Title = "Real Module",
+                    Uid = "learn.real-module",
+                    Units = [new DownloadedUnit { Title = "Intro", MarkdownContent = "Real content here" }]
+                },
+                new DownloadedModule
+                {
+                    Title = "Unavailable Module",
+                    Uid = "learn-bizapps.missing",
+                    Units =
+                    [
+                        new DownloadedUnit
+                        {
+                            Title = "Content Unavailable",
+                            Uid = "learn-bizapps.missing.unavailable",
+                            MarkdownContent = "> **⚠ Module not available**"
+                        }
+                    ]
+                }
+            ]
+        };
+        var result = _merger.Merge([content], date: new DateTime(2025, 1, 1));
+        Assert.Contains("# Real Module", result);
+        Assert.Contains("Real content here", result);
+        Assert.Contains("# Unavailable Module", result);
+        Assert.Contains("⚠ Module not available", result);
+    }
+
     // --- Helper ---
 
     private static DownloadedContent CreateContent(string title, ContentType type, params (string Title, string Content)[] units)

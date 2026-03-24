@@ -59,6 +59,7 @@
 - **UID ≠ directory name**: `learn.github.copilot-spaces` → `introduction-copilot-spaces`, `learn.github-copilot-with-javascript` → `introduction-copilot-javascript`
 - **Parent dir ≠ uid prefix**: `learn.wwl.*` → `learn-pr/wwl-azure/` (not `wwl/`); modules without provider (e.g., `learn.advanced-github-copilot`) may live in `learn-pr/github/`
 - **Cross-repo modules**: some learning paths reference modules from private repos (e.g., `learn-bizapps.*` → `MicrosoftDocs/learn-bizapps-pr`, which is not publicly accessible). `ContentDownloader.DownloadModuleByUidSafeAsync` handles these by creating a placeholder module with a warning blockquote in the output document, plus a console warning. The module title is fetched from the Catalog API when possible
+- **Media dir naming**: most modules store images in `media/`, but some (e.g., `intro-to-azure-load-balancer`, `intro-to-azure-application-gateway`, `intro-to-azure-network-watcher`) use `images/` instead. `ContentDownloader.ProcessUnitAsync` tracks the original source directory from DFM `:::image source="../images/...":::` references via `mediaOrigins` dictionary, and `DownloadMediaAsync` uses this to download from the correct GitHub directory
 - **Numbered unit YAML files**: `1-introduction.yml`, `2-xxx.yml`; matched by slug in filename
 - **Knowledge check units**: `quiz:` field appears as a root-level YAML key (not inside `content: |`) — handled via `Quiz` property in `UnitYaml`
 - **Units without content**: sandbox exercises may have empty content → skipped
