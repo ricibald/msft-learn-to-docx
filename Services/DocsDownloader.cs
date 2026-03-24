@@ -34,9 +34,10 @@ public sealed partial class DocsDownloader
         var repoPath = repo.RepoContentPath;
         Console.WriteLine($"Downloading docs from {repo.FullRepo}: {repoPath}");
 
-        // Collect ordered page list (using toc.yml if available)
-        var pages = await CollectPagesAsync(repo, repoPath);
-        Console.WriteLine($"  Found {pages.Count} pages to download");
+        // Collect ordered page list (using toc.yml if available, with hierarchy info)
+        var tocItems = await CollectPagesAsync(repo, repoPath);
+        var pageCount = tocItems.Count(t => !t.IsSectionHeader);
+        Console.WriteLine($"  Found {pageCount} pages to download ({tocItems.Count(t => t.IsSectionHeader)} sections)");
 
         var content = new DownloadedContent
         {
@@ -54,12 +55,28 @@ public sealed partial class DocsDownloader
         // Track all image paths for downloading
         var allImagePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        for (var i = 0; i < pages.Count; i++)
+        var pageIndex = 0;
+        for (var i = 0; i < tocItems.Count; i++)
         {
-            var (pagePath, pageTitle) = pages[i];
-            Console.Write($"  [{i + 1}/{pages.Count}] {pagePath}...");
+            var item = tocItems[i];
 
-            var markdown = await _github.TryDownloadStringAsync(repo, pagePath);
+            // Section headers: add as title-only units (no content download)
+            if (item.IsSectionHeader)
+            {
+                module.Units.Add(new DownloadedUnit
+                {
+                    Title = item.Title ?? "Section",
+                    Uid = $"section.{i}",
+                    SectionDepth = item.Depth,
+                    IsSectionHeader = true
+                });
+                continue;
+            }
+
+            pageIndex++;
+            Console.Write($"  [{pageIndex}/{pageCount}] {item.Path}...");
+
+            var markdown = await _github.TryDownloadStringAsync(repo, item.Path!);
             if (markdown is null)
             {
                 Console.WriteLine(" (not found)");
@@ -70,9 +87,9 @@ public sealed partial class DocsDownloader
             markdown = StripFrontmatter(markdown);
 
             // Extract title from first H1 if not provided by toc.yml
-            var title = pageTitle ?? ExtractFirstHeading(markdown) ?? Path.GetFileNameWithoutExtension(pagePath);
+            var title = item.Title ?? ExtractFirstHeading(markdown) ?? Path.GetFileNameWithoutExtension(item.Path);
 
-            var pageDir = Path.GetDirectoryName(pagePath)?.Replace('\\', '/') ?? "";
+            var pageDir = Path.GetDirectoryName(item.Path)?.Replace('\\', '/') ?? "";
 
             // Resolve [!INCLUDE] references by downloading the referenced files
             markdown = await ResolveIncludesAsync(markdown, pageDir, repo);
@@ -90,8 +107,10 @@ public sealed partial class DocsDownloader
             module.Units.Add(new DownloadedUnit
             {
                 Title = title,
-                Uid = pagePath,
-                MarkdownContent = markdown
+                Uid = item.Path!,
+                MarkdownContent = markdown,
+                SectionDepth = item.Depth,
+                IsSectionHeader = false
             });
 
             Console.WriteLine(" OK");
@@ -115,25 +134,55 @@ public sealed partial class DocsDownloader
                         LocalPath: Path.Combine(mediaDir, SanitizeImageFileName(imagePath, repo.RepoContentPath))))
                     .ToList();
 
-                await _github.DownloadLfsFilesAsync(repo, filesToDownload);
+                var failedPaths = await _github.DownloadLfsFilesAsync(repo, filesToDownload);
+
+                // Try live site fallback for failed images
+                if (failedPaths.Count > 0)
+                {
+                    var liveSiteFallbacks = 0;
+                    foreach (var failedPath in failedPaths)
+                    {
+                        var localFileName = SanitizeImageFileName(failedPath, repo.RepoContentPath);
+                        var localPath = Path.Combine(mediaDir, localFileName);
+                        if (await TryDownloadFromLiveSiteAsync(repo, failedPath, localPath))
+                            liveSiteFallbacks++;
+                        else
+                            Console.WriteLine($"  [WARN] Media not found: {failedPath}");
+                    }
+                    if (liveSiteFallbacks > 0)
+                        Console.WriteLine($"  {liveSiteFallbacks} image(s) downloaded from live site (not in GitHub/LFS)");
+                }
             }
             else
             {
                 var count = 0;
+                var liveSiteFallbacks = 0;
                 foreach (var imagePath in allImagePaths)
                 {
                     count++;
                     Console.Write($"\r  [{count}/{allImagePaths.Count}] Downloading images...");
                     var localFileName = SanitizeImageFileName(imagePath, repo.RepoContentPath);
                     var localPath = Path.Combine(mediaDir, localFileName);
-                    await _github.DownloadFileAsync(repo, imagePath, localPath);
+
+                    // Try GitHub first, then fall back to live site
+                    var downloaded = await _github.TryDownloadFileAsync(repo, imagePath, localPath);
+                    if (!downloaded)
+                    {
+                        downloaded = await TryDownloadFromLiveSiteAsync(repo, imagePath, localPath);
+                        if (downloaded)
+                            liveSiteFallbacks++;
+                        else
+                            Console.WriteLine($"\n  [WARN] Media not found: {imagePath}");
+                    }
                 }
                 Console.WriteLine();
+                if (liveSiteFallbacks > 0)
+                    Console.WriteLine($"  {liveSiteFallbacks} image(s) downloaded from live site (not in GitHub repo)");
             }
         }
 
         // Summary statistics
-        var downloadedPages = module.Units.Count;
+        var downloadedPages = module.Units.Count(u => !u.IsSectionHeader);
         var downloadedImages = allImagePaths.Count > 0
             ? Directory.Exists(Path.Combine(outputDir, "media"))
                 ? Directory.GetFiles(Path.Combine(outputDir, "media")).Length
@@ -145,11 +194,25 @@ public sealed partial class DocsDownloader
     }
 
     /// <summary>
-    /// Collects pages in order: uses toc.yml if present, otherwise falls back to alphabetical directory listing.
-    /// If the path is a single file (not a directory), returns it directly.
-    /// Returns a list of (repoPath, title?) tuples.
+    /// Tries to download an image from the live site (e.g., learn.microsoft.com) as a fallback
+    /// when the image is not found in the GitHub repo.
     /// </summary>
-    private async Task<List<(string Path, string? Title)>> CollectPagesAsync(DocsRepoInfo repo, string repoPath)
+    private async Task<bool> TryDownloadFromLiveSiteAsync(DocsRepoInfo repo, string repoPath, string localPath)
+    {
+        var liveUrl = repo.GetLiveSiteUrl(repoPath);
+        if (liveUrl is null) return false;
+        return await _github.TryDownloadFromUrlAsync(liveUrl, localPath);
+    }
+
+    /// <summary>
+    /// Represents a flattened TOC item with depth and section-header information.
+    /// </summary>
+    private sealed record TocFlatItem(string? Path, string? Title, int Depth, bool IsSectionHeader);
+
+    /// <summary>
+    /// Collects pages in order: uses toc.yml if present (with hierarchy), otherwise falls back to alphabetical listing.
+    /// </summary>
+    private async Task<List<TocFlatItem>> CollectPagesAsync(DocsRepoInfo repo, string repoPath)
     {
         // Try to download toc.yml
         var tocYaml = await _github.TryDownloadStringAsync(repo, $"{repoPath}/toc.yml");
@@ -158,10 +221,10 @@ public sealed partial class DocsDownloader
             Console.WriteLine("  Using toc.yml for page ordering");
             var tocEntries = _yaml.Deserialize<List<TocEntry>>(tocYaml);
             if (tocEntries is not null)
-                return await FlattenTocAsync(tocEntries, repoPath, repo);
+                return await FlattenTocWithDepthAsync(tocEntries, repoPath, repo, 0);
         }
 
-        // Try directory listing first
+        // Try directory listing first (flat, depth 0)
         var pages = await CollectPagesFromDirectoryAsync(repo, repoPath);
         if (pages.Count > 0)
             return pages;
@@ -170,11 +233,11 @@ public sealed partial class DocsDownloader
         if (!repoPath.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
         {
             var singleFilePath = repoPath + ".md";
-            var content = await _github.TryDownloadStringAsync(repo, singleFilePath);
-            if (content is not null)
+            var fileContent = await _github.TryDownloadStringAsync(repo, singleFilePath);
+            if (fileContent is not null)
             {
                 Console.WriteLine("  Path resolves to a single page");
-                return [(singleFilePath, null)];
+                return [new TocFlatItem(singleFilePath, null, 0, false)];
             }
         }
 
@@ -182,34 +245,24 @@ public sealed partial class DocsDownloader
     }
 
     /// <summary>
-    /// Flattens a toc.yml structure into an ordered list of (path, title) tuples.
-    /// Recursively resolves sub-TOC references (e.g., "get-started/toc.yml").
-    /// Skips external links and cross-references.
+    /// Flattens a toc.yml structure into an ordered list with depth and section header info.
+    /// Recursively resolves sub-TOC references and preserves the hierarchical structure.
     /// </summary>
-    private async Task<List<(string Path, string? Title)>> FlattenTocAsync(
-        List<TocEntry> entries, string baseDir, DocsRepoInfo repo)
+    private async Task<List<TocFlatItem>> FlattenTocWithDepthAsync(
+        List<TocEntry> entries, string baseDir, DocsRepoInfo repo, int depth)
     {
-        var pages = new List<(string, string?)>();
+        var result = new List<TocFlatItem>();
 
         foreach (var entry in entries)
         {
-            if (entry.Href is not null)
+            var hasHref = entry.Href is not null;
+            var hasItems = entry.Items is { Count: > 0 };
+
+            if (hasHref)
             {
-                var href = entry.Href.Trim();
+                var href = entry.Href!.Trim();
 
-                // Skip external URLs
-                if (href.StartsWith("http", StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                // Skip cross-references (absolute paths starting with /)
-                if (href.StartsWith('/'))
-                    continue;
-
-                // Skip references that go too far outside the base directory
-                if (href.StartsWith("../../"))
-                    continue;
-
-                // Recursively resolve sub-TOC references (e.g., "get-started/toc.yml")
+                // Sub-TOC references replace both href and children processing entirely
                 if (href.EndsWith("toc.yml", StringComparison.OrdinalIgnoreCase))
                 {
                     var subTocPath = ResolveRelativePath(baseDir, href);
@@ -219,45 +272,50 @@ public sealed partial class DocsDownloader
                         var subTocDir = Path.GetDirectoryName(subTocPath)?.Replace('\\', '/') ?? baseDir;
                         var subEntries = _yaml.Deserialize<List<TocEntry>>(subTocContent);
                         if (subEntries is not null)
-                        {
-                            var subPages = await FlattenTocAsync(subEntries, subTocDir, repo);
-                            pages.AddRange(subPages);
-                        }
+                            result.AddRange(await FlattenTocWithDepthAsync(subEntries, subTocDir, repo, depth));
                     }
                     continue;
                 }
 
-                // Skip query string parameters and anchors
-                var cleanHref = href.Split('?')[0].Split('#')[0].Trim();
-                if (string.IsNullOrEmpty(cleanHref))
-                    continue;
-
-                // Only include .md files for content
-                if (cleanHref.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
+                // Skip external URLs, cross-references, and deeply nested parent refs
+                // but still process children below
+                if (!href.StartsWith("http", StringComparison.OrdinalIgnoreCase) &&
+                    !href.StartsWith('/') &&
+                    !href.StartsWith("../../"))
                 {
-                    var fullPath = ResolveRelativePath(baseDir, cleanHref);
-                    pages.Add((fullPath, entry.EffectiveName));
+                    var cleanHref = href.Split('?')[0].Split('#')[0].Trim();
+                    if (!string.IsNullOrEmpty(cleanHref) &&
+                        cleanHref.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var fullPath = ResolveRelativePath(baseDir, cleanHref);
+                        result.Add(new TocFlatItem(fullPath, entry.EffectiveName, depth, false));
+                    }
                 }
             }
-
-            // Recursively handle nested items
-            if (entry.Items is { Count: > 0 })
+            else if (hasItems)
             {
-                var nested = await FlattenTocAsync(entry.Items, baseDir, repo);
-                pages.AddRange(nested);
+                // No href, has children → this is a section header
+                result.Add(new TocFlatItem(null, entry.EffectiveName, depth, true));
+            }
+
+            // Recursively handle nested items (children go one level deeper)
+            if (hasItems)
+            {
+                var nested = await FlattenTocWithDepthAsync(entry.Items!, baseDir, repo, depth + 1);
+                result.AddRange(nested);
             }
         }
 
-        return pages;
+        return result;
     }
 
     /// <summary>
-    /// Collects all .md files from a directory recursively, alphabetically ordered.
+    /// Collects all .md files from a directory recursively, alphabetically ordered (flat, depth 0).
     /// </summary>
-    private async Task<List<(string Path, string? Title)>> CollectPagesFromDirectoryAsync(
+    private async Task<List<TocFlatItem>> CollectPagesFromDirectoryAsync(
         DocsRepoInfo repo, string repoPath)
     {
-        var pages = new List<(string, string?)>();
+        var pages = new List<TocFlatItem>();
         var items = await _github.ListDirectoryAsync(repo, repoPath);
 
         // Process .md files first (sorted: index.md/overview.md first, then alphabetical)
@@ -269,7 +327,7 @@ public sealed partial class DocsDownloader
             .ToList();
 
         foreach (var file in mdFiles)
-            pages.Add((file.Path, null));
+            pages.Add(new TocFlatItem(file.Path, null, 0, false));
 
         // Then recurse into subdirectories (skip images/media dirs)
         var dirs = items

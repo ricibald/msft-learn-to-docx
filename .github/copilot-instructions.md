@@ -22,19 +22,23 @@
 
 ### Data Flow — Docs Sites (new)
 1. Input: one or more docs site URLs (code.visualstudio.com or learn.microsoft.com non-training)
-2. `DocsUrlParser.Parse()` → `DocsSiteUrl` with `DocsRepoInfo` (owner, repo, branch, basePath, contentPath, usesLfs)
+2. `DocsUrlParser.Parse()` → `DocsSiteUrl` with `DocsRepoInfo` (owner, repo, branch, basePath, contentPath, usesLfs, liveSiteHost, liveSitePathPrefix)
 3. `DocsDownloader.DownloadAsync()`:
-   a. Try to download `toc.yml` from the target directory for page ordering
+   a. Try to download `toc.yml` from the target directory for page ordering **with hierarchical depth tracking**
    b. If no toc.yml, recursively list directory and sort alphabetically (index.md/overview.md first)
    c. If path resolves to neither a directory nor a toc.yml, try appending `.md` for single-file download
-   d. Download each .md file, strip YAML frontmatter, remap image paths to `media/` output dir
-   e. Apply DFM conversion + strip HTML blocks (`<video>`, `<div>`)
-   f. Download images (with batched Git LFS Batch API for LFS-enabled repos)
-4. Content is merged with **original heading hierarchy preserved** (no H1/H2 wrapping, no heading shift)
-5. Pages separated by horizontal rules in merged markdown
-6. pandoc → DOCX
+   d. **TOC hierarchy**: section-only entries (name + items, no href) become section header units; pages carry their nesting depth
+   e. Download each .md file, strip YAML frontmatter, remap image paths to `media/` output dir
+   f. Apply DFM conversion + strip HTML blocks (`<video>`, `<div>`)
+   g. Download images (with batched Git LFS Batch API for LFS-enabled repos)
+   h. **Image fallback**: for non-LFS repos, if GitHub returns 404, try downloading from live site URL (e.g., `learn.microsoft.com/en-us/...`)
+4. Content is merged with **TOC-based heading hierarchy**: section headers → headings at TOC depth, page titles → headings at depth+1, content headings shifted accordingly
+5. Duplicate first H1 removed from page content when it matches the TOC-provided title
+6. Pages separated by horizontal rules in merged markdown
+7. pandoc → DOCX
 
 ### URL → Repo Mapping (`DocsUrlParser`)
+- Each mapping includes `LiveSiteHost` and `LiveSitePathPrefix` for fallback image downloads from the live site
 - `code.visualstudio.com/docs/*` → `microsoft/vscode-docs`, branch `main`, docs path `docs/`, **LFS enabled**
 - `learn.microsoft.com/*/azure/devops/*` → `MicrosoftDocs/azure-devops-docs`, `docs/`
 - `learn.microsoft.com/*/dotnet/*` → `dotnet/docs`, `docs/`
@@ -54,6 +58,7 @@
 - `media.githubusercontent.com` fallback was removed because it returns 404 for most LFS objects in `vscode-docs`
 - LFS detection is only active when `DocsRepoInfo.UsesLfs == true` (set per mapping)
 - The `_lfsHttp` client also handles the final binary download using auth headers returned by the LFS server in the batch response
+- `DownloadLfsFilesAsync` returns failed repo paths so callers can try live site fallback
 
 ### Known Structural Exceptions in the MicrosoftDocs/learn Repo
 - **UID ≠ directory name**: `learn.github.copilot-spaces` → `introduction-copilot-spaces`, `learn.github-copilot-with-javascript` → `introduction-copilot-javascript`
@@ -71,10 +76,10 @@
 - `LearnCatalogClient`: `https://learn.microsoft.com/api/catalog/?uid=...&type=modules` — no authentication required
 - `ContentDownloader`: downloads Learn training content (paths + modules + units). Accepts `LearnCatalogClient` for Catalog API lookups. Handles unresolvable modules gracefully via `DownloadModuleByUidSafeAsync` (placeholder with warning in document)
 - `ModuleResolver`: heuristic parent dir (from uid prefix) + fallback full scan of learn-pr/
-- `DfmConverter`: regex-based, converts :::image:::, [!NOTE], [!div], :::zone:::, [!VIDEO], :::code:::, etc. Also runs `EnsureBlankLineBeforeLists` to inject a blank line before any list block that immediately follows a paragraph (prevents pandoc from rendering bullets as inline text).
+- `DfmConverter`: regex-based, converts :::image:::, [!NOTE], [!div], :::zone:::, [!VIDEO], :::code:::, etc. Also runs `EnsureBlankLineBeforeLists` to inject a blank line before any list block that immediately follows a paragraph (prevents pandoc from rendering bullets as inline text). Also runs `EnsureBlankLinesAroundHorizontalRules` to ensure pandoc correctly treats `---` as horizontal rules (not YAML or setext headings). Zone pivot markers (`:::zone pivot="...":::` / `:::zone-end:::`) are stripped while keeping all pivot content.
 - `MarkdownMerger`: YAML frontmatter generation + CC BY 4.0 attribution + download summary section. Two merge modes:
   - **Learn training**: Module = H1, Unit = H2, content = H3+ (heading shift applied)
-  - **Docs site**: original headings preserved, pages separated by `---` horizontal rules
+  - **Docs site**: TOC-based heading hierarchy — section headers become headings at TOC depth, page titles at depth+1, content headings shifted accordingly. Duplicate leading H1 removed when matching TOC title. Pages separated by `---` horizontal rules
   - `subject` field is dynamic based on content types present
   - **Download Summary** section after attribution: module/unit counts + list of unavailable modules (detected by `.unavailable` unit UID suffix)
 - `DownloadedContent`: model with `Title`, `IsPath`, `Type` (`LearnTraining | DocsSite`), `Modules` list
@@ -94,7 +99,7 @@
 
 ### Heading Hierarchy
 - **Learn training mode**: Module title = H1, Unit title = H2, content headings shifted so minimum = H3
-- **Docs site mode**: original heading levels preserved as-is, pages separated by horizontal rules
+- **Docs site mode**: TOC-based heading hierarchy — section headers (TOC entries without href) become headings at their nesting depth (depth 0 = H1, depth 1 = H2, etc.), page titles become headings at depth+1, content headings shifted to start at depth+2. Pages separated by horizontal rules. If content starts with an H1 matching the TOC title, the duplicate is removed
 - YAML frontmatter (`title`, `date`, `keywords`, `subject`, `description`) renders as pandoc title block (Word cover page + document properties)
 
 ### Content License
@@ -116,7 +121,7 @@
 ### Testing
 - xUnit test project at `Tests/MsftLearnToDocx.Tests.csproj`, added to solution
 - **IMPORTANT**: Main `MsftLearnToDocx.csproj` excludes `Tests\**` via `DefaultItemExcludes` to prevent SDK glob from including test files in the main compilation
-- Test files: `DocsUrlParserTests.cs` (URL parsing, 12 tests), `GitHubRawClientTests.cs` (LFS pointer detection/parsing via reflection), `TocEntryTests.cs` (model tests), `DfmConverterTests.cs` (DFM→MD conversion, 20 tests), `MarkdownMergerTests.cs` (heading hierarchy, frontmatter, subject, attribution, download summary, placeholders, 17 tests), `DocsDownloaderTests.cs` (StripFrontmatter, StripHtmlBlocks, SanitizeImageFileName, ResolveRelativePath, DeriveTitleFromPath, 12 tests)
+- Test files: `DocsUrlParserTests.cs` (URL parsing + LiveSiteUrl, 15 tests), `GitHubRawClientTests.cs` (LFS pointer detection/parsing via reflection), `TocEntryTests.cs` (model tests), `DfmConverterTests.cs` (DFM→MD conversion, zone pivots with spaces, HR blank lines, 26 tests), `MarkdownMergerTests.cs` (heading hierarchy, TOC-based docs-site hierarchy, frontmatter, subject, attribution, download summary, placeholders, duplicate title removal, 23 tests), `DocsDownloaderTests.cs` (StripFrontmatter, StripHtmlBlocks, SanitizeImageFileName, ResolveRelativePath, DeriveTitleFromPath, 12 tests)
 - Run tests: `dotnet test Tests/MsftLearnToDocx.Tests.csproj`
 - CI: `.github/workflows/ci.yml` — .NET 8 build + test on every push/PR
 

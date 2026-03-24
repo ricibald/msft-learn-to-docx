@@ -109,12 +109,54 @@ public class MarkdownMergerTests
     // --- Docs site mode ---
 
     [Fact]
-    public void Merge_DocsSite_PreservesOriginalHeadings()
+    public void Merge_DocsSite_PageTitleIsHeading_ContentShifted()
     {
         var content = CreateContent("Docs", ContentType.DocsSite, ("Page", "# Original H1\n## Original H2"));
         var result = _merger.Merge([content], date: new DateTime(2025, 1, 1));
-        Assert.Contains("# Original H1", result);
-        Assert.Contains("## Original H2", result);
+        // SectionDepth=0 → page title as H1, content shifted to start at H2
+        Assert.Contains("# Page", result);
+        Assert.Contains("## Original H1", result);
+        Assert.Contains("### Original H2", result);
+    }
+
+    [Fact]
+    public void Merge_DocsSite_DuplicateTitleRemoved()
+    {
+        // When page content starts with an H1 matching the TOC title, it should be removed
+        var content = CreateContent("Docs", ContentType.DocsSite, ("My Page", "# My Page\n## Sub heading\nContent"));
+        var result = _merger.Merge([content], date: new DateTime(2025, 1, 1));
+        // H1 "My Page" from content is removed, only the TOC-based heading remains
+        var h1Count = System.Text.RegularExpressions.Regex.Matches(result, @"^# My Page\r?$", System.Text.RegularExpressions.RegexOptions.Multiline).Count;
+        Assert.Equal(1, h1Count);
+    }
+
+    [Fact]
+    public void Merge_DocsSite_SectionHeaders_CreateHeadingsWithoutContent()
+    {
+        var content = CreateDocsSiteContent("Docs",
+            (Title: "Overview", Content: "", Depth: 0, IsSectionHeader: true),
+            (Title: "Intro", Content: "Intro content", Depth: 1, IsSectionHeader: false),
+            (Title: "Advanced", Content: "", Depth: 0, IsSectionHeader: true),
+            (Title: "Deep Dive", Content: "Advanced content", Depth: 1, IsSectionHeader: false));
+        var result = _merger.Merge([content], date: new DateTime(2025, 1, 1));
+        Assert.Contains("# Overview", result);
+        Assert.Contains("## Intro", result);
+        Assert.Contains("# Advanced", result);
+        Assert.Contains("## Deep Dive", result);
+    }
+
+    [Fact]
+    public void Merge_DocsSite_DepthLevels_MappedToHeadingHierarchy()
+    {
+        var content = CreateDocsSiteContent("Docs",
+            (Title: "Section", Content: "", Depth: 0, IsSectionHeader: true),
+            (Title: "SubSection", Content: "", Depth: 1, IsSectionHeader: true),
+            (Title: "Page", Content: "Content here", Depth: 2, IsSectionHeader: false));
+        var result = _merger.Merge([content], date: new DateTime(2025, 1, 1));
+        Assert.Contains("# Section", result);
+        Assert.Contains("## SubSection", result);
+        Assert.Contains("### Page", result);
+        Assert.Contains("Content here", result);
     }
 
     [Fact]
@@ -300,6 +342,30 @@ public class MarkdownMergerTests
         Assert.Contains("**1** knowledge checks", result);
     }
 
+    // --- RemoveLeadingDuplicateTitle ---
+
+    [Fact]
+    public void RemoveLeadingDuplicateTitle_MatchingH1_Removed()
+    {
+        var result = MarkdownMerger.RemoveLeadingDuplicateTitle("# My Title\nContent", "My Title");
+        Assert.DoesNotContain("# My Title", result);
+        Assert.Contains("Content", result);
+    }
+
+    [Fact]
+    public void RemoveLeadingDuplicateTitle_DifferentH1_Preserved()
+    {
+        var result = MarkdownMerger.RemoveLeadingDuplicateTitle("# Other Title\nContent", "My Title");
+        Assert.Contains("# Other Title", result);
+    }
+
+    [Fact]
+    public void RemoveLeadingDuplicateTitle_NoH1_ReturnsUnchanged()
+    {
+        var result = MarkdownMerger.RemoveLeadingDuplicateTitle("Just content\nMore content", "Title");
+        Assert.Equal("Just content\nMore content", result);
+    }
+
     // --- Helper ---
 
     private static DownloadedContent CreateContent(string title, ContentType type, params (string Title, string Content)[] units)
@@ -314,6 +380,32 @@ public class MarkdownMergerTests
         {
             Title = title,
             Type = type,
+            Modules =
+            [
+                new DownloadedModule
+                {
+                    Title = title,
+                    Units = moduleUnits
+                }
+            ]
+        };
+    }
+
+    private static DownloadedContent CreateDocsSiteContent(string title,
+        params (string Title, string Content, int Depth, bool IsSectionHeader)[] units)
+    {
+        var moduleUnits = units.Select(u => new DownloadedUnit
+        {
+            Title = u.Title,
+            MarkdownContent = u.Content,
+            SectionDepth = u.Depth,
+            IsSectionHeader = u.IsSectionHeader
+        }).ToList();
+
+        return new DownloadedContent
+        {
+            Title = title,
+            Type = ContentType.DocsSite,
             Modules =
             [
                 new DownloadedModule

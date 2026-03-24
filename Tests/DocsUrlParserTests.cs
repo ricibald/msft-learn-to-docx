@@ -127,6 +127,33 @@ public class DocsUrlParserTests
         Assert.Equal("docs", info.RepoContentPath);
     }
 
+    // --- LiveSiteHost / LiveSitePathPrefix ---
+
+    [Fact]
+    public void Parse_AzureDocsUrl_SetsLiveSiteInfo()
+    {
+        var result = DocsUrlParser.Parse("https://learn.microsoft.com/en-us/azure/storage/blobs");
+        var docs = Assert.IsType<DocsSiteUrl>(result);
+        Assert.Equal("learn.microsoft.com", docs.RepoInfo.LiveSiteHost);
+        Assert.Equal("azure", docs.RepoInfo.LiveSitePathPrefix);
+    }
+
+    [Fact]
+    public void DocsRepoInfo_GetLiveSiteUrl_ConstructsCorrectUrl()
+    {
+        var info = new DocsRepoInfo("MicrosoftDocs", "azure-docs", "main", "articles", "storage/blobs",
+            LiveSiteHost: "learn.microsoft.com", LiveSitePathPrefix: "azure");
+        var url = info.GetLiveSiteUrl("articles/storage/blobs/media/some-image.png");
+        Assert.Equal("https://learn.microsoft.com/en-us/azure/storage/blobs/media/some-image.png", url);
+    }
+
+    [Fact]
+    public void DocsRepoInfo_GetLiveSiteUrl_NullWhenNotConfigured()
+    {
+        var info = new DocsRepoInfo("Owner", "Repo", "main", "docs", "path");
+        Assert.Null(info.GetLiveSiteUrl("docs/path/media/img.png"));
+    }
+
     // --- Error cases ---
 
     [Fact]

@@ -21,7 +21,9 @@ public record DocsRepoInfo(
     string Branch,
     string DocsBasePath,
     string ContentPath,
-    bool UsesLfs = false
+    bool UsesLfs = false,
+    string? LiveSiteHost = null,
+    string? LiveSitePathPrefix = null
 )
 {
     /// <summary>Full repo path including owner.</summary>
@@ -31,6 +33,23 @@ public record DocsRepoInfo(
     public string RepoContentPath => string.IsNullOrEmpty(ContentPath)
         ? DocsBasePath
         : $"{DocsBasePath}/{ContentPath}";
+
+    /// <summary>
+    /// Constructs a live site URL for a repo-relative path (e.g., for image fallback downloads).
+    /// Returns null if live site info is not configured.
+    /// </summary>
+    public string? GetLiveSiteUrl(string repoPath)
+    {
+        if (LiveSiteHost is null || LiveSitePathPrefix is null) return null;
+
+        var relativePath = repoPath;
+        if (relativePath.StartsWith(DocsBasePath + "/", StringComparison.OrdinalIgnoreCase))
+            relativePath = relativePath[(DocsBasePath.Length + 1)..];
+        else if (relativePath.StartsWith(DocsBasePath, StringComparison.OrdinalIgnoreCase))
+            relativePath = relativePath[DocsBasePath.Length..].TrimStart('/');
+
+        return $"https://{LiveSiteHost}/en-us/{LiveSitePathPrefix}/{relativePath}";
+    }
 }
 
 /// <summary>
@@ -49,6 +68,12 @@ public class TocEntry
 
     [YamlMember(Alias = "items")]
     public List<TocEntry>? Items { get; set; }
+
+    /// <summary>
+    /// Whether this section is expanded by default in the web UI. UI-only property, preserved for fidelity.
+    /// </summary>
+    [YamlMember(Alias = "expanded")]
+    public bool? Expanded { get; set; }
 
     /// <summary>
     /// Returns displayName if set, otherwise name.
@@ -207,4 +232,10 @@ public class DownloadedUnit
     public string Uid { get; set; } = "";
     public string MarkdownContent { get; set; } = "";
     public bool IsQuiz { get; set; }
+
+    /// <summary>TOC nesting depth for docs-site mode (0 = top level).</summary>
+    public int SectionDepth { get; set; }
+
+    /// <summary>True if this unit is a TOC section header (no page content, only a title).</summary>
+    public bool IsSectionHeader { get; set; }
 }

@@ -28,6 +28,7 @@ public sealed partial class DfmConverter
         result = ConvertCodeReferences(result, codeContents);
         result = CleanupIncludeRefs(result);
         result = EnsureBlankLineBeforeLists(result);
+        result = EnsureBlankLinesAroundHorizontalRules(result);
         result = CleanupTrailingWhitespace(result);
 
         return result;
@@ -192,6 +193,19 @@ public sealed partial class DfmConverter
         return ListWithoutPrecedingBlankLine().Replace(markdown, "$1\n\n$2");
     }
 
+    /// <summary>
+    /// Ensures blank lines exist before and after horizontal rules (---, ***, ___)
+    /// to prevent pandoc from misinterpreting them as setext headings or YAML delimiters.
+    /// </summary>
+    private static string EnsureBlankLinesAroundHorizontalRules(string markdown)
+    {
+        // Ensure blank line after horizontal rule when followed by non-blank line
+        var result = HrMissingBlankAfter().Replace(markdown, "$1\n\n");
+        // Ensure blank line before horizontal rule when preceded by non-blank line
+        result = HrMissingBlankBefore().Replace(result, "$1\n\n$2");
+        return result;
+    }
+
     private static string CleanupTrailingWhitespace(string markdown)
     {
         // Remove excessive blank lines (more than 2 consecutive)
@@ -221,10 +235,10 @@ public sealed partial class DfmConverter
     [GeneratedRegex(@">\s*\[!div\s+class=""[^""]*""\]\s*\r?\n?", RegexOptions.Multiline | RegexOptions.IgnoreCase)]
     private static partial Regex DivBlockRegex();
 
-    [GeneratedRegex(@":::zone\s+[^:]*:::\s*\r?\n?", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@":::\s*zone\s+[^:]*?\s*:::\s*\r?\n?", RegexOptions.IgnoreCase)]
     private static partial Regex ZoneStartRegex();
 
-    [GeneratedRegex(@":::zone-end:::\s*\r?\n?", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@":::\s*zone-end\s*:::\s*\r?\n?", RegexOptions.IgnoreCase)]
     private static partial Regex ZoneEndRegex();
 
     [GeneratedRegex(@":::(row|column|row-end|column-end)(?:\s+[^:]*)?:::\s*\r?\n?", RegexOptions.IgnoreCase)]
@@ -248,4 +262,16 @@ public sealed partial class DfmConverter
     /// </summary>
     [GeneratedRegex(@"(^(?!\s*[-*+]|\s*\d+\.)(?!\s*$).+)\n([ \t]*(?:[-*+]|\d+\.)[ \t])", RegexOptions.Multiline)]
     private static partial Regex ListWithoutPrecedingBlankLine();
+
+    /// <summary>
+    /// Matches a horizontal rule (---) immediately followed by a non-blank line (no intervening blank line).
+    /// </summary>
+    [GeneratedRegex(@"^(---[ \t]*)\r?\n(?!\r?\n|$)", RegexOptions.Multiline)]
+    private static partial Regex HrMissingBlankAfter();
+
+    /// <summary>
+    /// Matches a non-blank line immediately followed by a horizontal rule (---) without an intervening blank line.
+    /// </summary>
+    [GeneratedRegex(@"(\S[^\n]*)\r?\n(---[ \t]*)$", RegexOptions.Multiline)]
+    private static partial Regex HrMissingBlankBefore();
 }

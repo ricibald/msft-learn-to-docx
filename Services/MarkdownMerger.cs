@@ -128,14 +128,33 @@ public sealed partial class MarkdownMerger
         {
             if (content.Type == ContentType.DocsSite)
             {
-                // Docs mode: preserve original heading levels, concatenate pages with horizontal rules
+                // Docs mode: use TOC hierarchy for headings when depth info is available
                 foreach (var module in content.Modules)
                 {
                     foreach (var unit in module.Units)
                     {
-                        if (!string.IsNullOrWhiteSpace(unit.MarkdownContent))
+                        if (unit.IsSectionHeader)
                         {
-                            sb.AppendLine(unit.MarkdownContent.Trim());
+                            // Section header: just a heading at appropriate depth
+                            var headingLevel = Math.Min(unit.SectionDepth + 1, 6);
+                            sb.AppendLine($"{new string('#', headingLevel)} {unit.Title}");
+                            sb.AppendLine();
+                        }
+                        else if (!string.IsNullOrWhiteSpace(unit.MarkdownContent))
+                        {
+                            var headingLevel = Math.Min(unit.SectionDepth + 1, 6);
+
+                            // Add page title as heading
+                            sb.AppendLine($"{new string('#', headingLevel)} {unit.Title}");
+                            sb.AppendLine();
+
+                            // Remove the first H1 if it matches the unit title (avoid duplication)
+                            var adjustedContent = RemoveLeadingDuplicateTitle(unit.MarkdownContent, unit.Title);
+
+                            // Shift content headings so minimum becomes headingLevel + 1
+                            adjustedContent = AdjustHeadingLevels(adjustedContent, headingLevel + 1);
+
+                            sb.AppendLine(adjustedContent.Trim());
                             sb.AppendLine();
                             sb.AppendLine("---");
                             sb.AppendLine();
@@ -183,6 +202,22 @@ public sealed partial class MarkdownMerger
         => value.Replace("\\", "\\\\").Replace("\"", "\\\"");
 
     /// <summary>
+    /// Removes the first H1 heading from markdown if it matches the given title.
+    /// Prevents duplication when the TOC title and content H1 are the same.
+    /// </summary>
+    internal static string RemoveLeadingDuplicateTitle(string markdown, string title)
+    {
+        var match = LeadingH1Regex().Match(markdown);
+        if (!match.Success) return markdown;
+
+        var h1Text = match.Groups[1].Value.Trim();
+        if (h1Text.Equals(title, StringComparison.OrdinalIgnoreCase))
+            return markdown[match.Length..].TrimStart('\r', '\n');
+
+        return markdown;
+    }
+
+    /// <summary>
     /// Adjusts all heading levels in markdown so the minimum heading starts at baseLevel.
     /// For example, if baseLevel=4 and content has H2 and H3, they become H4 and H5.
     /// </summary>
@@ -211,4 +246,10 @@ public sealed partial class MarkdownMerger
 
     [GeneratedRegex(@"^(#{1,6})\s+(.+)$", RegexOptions.Multiline)]
     private static partial Regex HeadingRegex();
+
+    /// <summary>
+    /// Matches the first H1 heading at the start of the content (with optional leading whitespace/blank lines).
+    /// </summary>
+    [GeneratedRegex(@"^\s*#\s+(.+?)[ \t]*\r?\n", RegexOptions.None)]
+    private static partial Regex LeadingH1Regex();
 }

@@ -106,7 +106,9 @@ public static partial class DocsUrlParser
                 mapping.Branch,
                 mapping.DocsPath,
                 contentPath,
-                mapping.UsesLfs));
+                mapping.UsesLfs,
+                mapping.Host,
+                mapping.PathPrefix));
         }
 
         throw new ArgumentException(

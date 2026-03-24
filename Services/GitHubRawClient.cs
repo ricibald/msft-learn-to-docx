@@ -165,6 +165,58 @@ public sealed class GitHubRawClient
     }
 
     /// <summary>
+    /// Tries to download a binary file from an arbitrary repo and save to local path.
+    /// Returns true if the file was downloaded successfully, false if not found (404).
+    /// </summary>
+    public async Task<bool> TryDownloadFileAsync(DocsRepoInfo repo, string repoPath, string localPath)
+    {
+        var url = $"https://raw.githubusercontent.com/{repo.FullRepo}/{repo.Branch}/{repoPath}";
+        var response = await _http.GetAsync(url);
+
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return false;
+
+        response.EnsureSuccessStatusCode();
+
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+
+        if (repo.UsesLfs && IsLfsPointer(bytes))
+        {
+            var lfsInfo = ParseLfsPointer(bytes);
+            if (lfsInfo is not null)
+            {
+                var lfsBytes = await DownloadLfsBlobAsync(repo, lfsInfo.Value.Oid, lfsInfo.Value.Size);
+                if (lfsBytes is not null)
+                    bytes = lfsBytes;
+                else
+                    return false;
+            }
+        }
+
+        var dir = Path.GetDirectoryName(localPath);
+        if (dir is not null) Directory.CreateDirectory(dir);
+        await File.WriteAllBytesAsync(localPath, bytes);
+        return true;
+    }
+
+    /// <summary>
+    /// Downloads a file from an arbitrary URL (e.g., live site fallback) and saves to local path.
+    /// Returns true on success, false on any HTTP error.
+    /// </summary>
+    public async Task<bool> TryDownloadFromUrlAsync(string url, string localPath)
+    {
+        var response = await _http.GetAsync(url);
+        if (!response.IsSuccessStatusCode)
+            return false;
+
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        var dir = Path.GetDirectoryName(localPath);
+        if (dir is not null) Directory.CreateDirectory(dir);
+        await File.WriteAllBytesAsync(localPath, bytes);
+        return true;
+    }
+
+    /// <summary>
     /// Downloads an LFS blob via the Git LFS Batch API.
     /// POST https://github.com/{owner}/{repo}.git/info/lfs/objects/batch
     /// Returns the binary content or null on failure.
@@ -179,12 +231,14 @@ public sealed class GitHubRawClient
     /// Downloads multiple LFS files from an arbitrary repo using a single LFS Batch API call.
     /// For each file: downloads raw content, detects LFS pointer, batches all OIDs together,
     /// then downloads binaries from the resolved URLs. Saves each file to its local path.
+    /// Returns a list of repo paths that failed to download (404 or LFS resolution failure).
     /// </summary>
-    public async Task DownloadLfsFilesAsync(DocsRepoInfo repo, IReadOnlyList<(string RepoPath, string LocalPath)> files)
+    public async Task<List<string>> DownloadLfsFilesAsync(DocsRepoInfo repo, IReadOnlyList<(string RepoPath, string LocalPath)> files)
     {
         // Phase 1: Download all raw files and collect LFS pointers
         var nonLfsFiles = new List<(string LocalPath, byte[] Bytes)>();
         var lfsPointers = new List<(string RepoPath, string LocalPath, string Oid, long Size)>();
+        var failedPaths = new List<string>();
 
         var count = 0;
         foreach (var (repoPath, localPath) in files)
@@ -203,7 +257,7 @@ public sealed class GitHubRawClient
 
             if (response.StatusCode == HttpStatusCode.NotFound)
             {
-                Console.WriteLine($"\n  [WARN] Media not found ({repo.FullRepo}): {repoPath}");
+                failedPaths.Add(repoPath);
                 continue;
             }
 
@@ -234,7 +288,7 @@ public sealed class GitHubRawClient
         if (lfsPointers.Count == 0)
         {
             Console.WriteLine();
-            return;
+            return failedPaths;
         }
 
         // Phase 2: Single batch request for all LFS OIDs
@@ -255,11 +309,12 @@ public sealed class GitHubRawClient
             }
             else
             {
-                Console.WriteLine($"\n  [WARN] LFS download failed ({repo.FullRepo}): {repoPath}");
+                failedPaths.Add(repoPath);
             }
         }
 
         Console.WriteLine($"\r  LFS: {resolved}/{lfsPointers.Count} objects resolved                    ");
+        return failedPaths;
     }
 
     /// <summary>

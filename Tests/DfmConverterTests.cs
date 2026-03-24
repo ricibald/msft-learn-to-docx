@@ -86,6 +86,26 @@ public class DfmConverterTests
         Assert.Contains("Content here", result);
     }
 
+    [Fact]
+    public void Convert_ZoneMarkers_WithSpaces_RemovesStartAndEnd()
+    {
+        var input = "::: zone pivot=\"programming-language-csharp\" :::\nC# content\n::: zone-end :::";
+        var result = _converter.Convert(input);
+        Assert.DoesNotContain("::: zone", result);
+        Assert.DoesNotContain("zone-end", result);
+        Assert.Contains("C# content", result);
+    }
+
+    [Fact]
+    public void Convert_ZonePivot_KeepsAllPivotContent()
+    {
+        var input = "::: zone pivot=\"windows\" :::\nWindows content\n::: zone-end :::\n::: zone pivot=\"linux\" :::\nLinux content\n::: zone-end :::";
+        var result = _converter.Convert(input);
+        Assert.Contains("Windows content", result);
+        Assert.Contains("Linux content", result);
+        Assert.DoesNotContain("zone pivot", result);
+    }
+
     // --- [!VIDEO] conversion ---
 
     [Fact]
@@ -175,6 +195,32 @@ public class DfmConverterTests
         var input = "line1\n\n\n\n\nline2";
         var result = _converter.Convert(input);
         Assert.Equal("line1\n\nline2", result.Trim());
+    }
+
+    // --- Horizontal rule blank line enforcement ---
+
+    [Fact]
+    public void Convert_HrFollowedByHeading_InsertsBlankLine()
+    {
+        var input = "Content\n\n---\n## See also\nMore content";
+        var result = _converter.Convert(input);
+        Assert.Contains("---\n\n## See also", result);
+    }
+
+    [Fact]
+    public void Convert_HrPrecededByContent_InsertsBlankLine()
+    {
+        var input = "Some text\n---\n\nMore content";
+        var result = _converter.Convert(input);
+        Assert.Contains("Some text\n\n---", result);
+    }
+
+    [Fact]
+    public void Convert_HrWithBlankLines_PreservesAsIs()
+    {
+        var input = "Content\n\n---\n\nMore content";
+        var result = _converter.Convert(input);
+        Assert.Contains("Content\n\n---\n\nMore content", result);
     }
 
     // --- Triple-colon block removal ---
