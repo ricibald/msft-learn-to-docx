@@ -42,6 +42,16 @@ public sealed partial class MarkdownMerger
             $"Source: {sourceList}. " +
             $"Adapted for offline use — original content unmodified except for format conversion.";
 
+        // Determine subject based on content types
+        var hasDocsSite = contents.Any(c => c.Type == ContentType.DocsSite);
+        var hasTraining = contents.Any(c => c.Type == ContentType.LearnTraining);
+        var subject = (hasTraining, hasDocsSite) switch
+        {
+            (true, true) => "Microsoft Learn & Documentation",
+            (false, true) => "Microsoft Documentation",
+            _ => "Microsoft Learn"
+        };
+
         sb.AppendLine("---");
         sb.AppendLine($"title: \"{EscapeYaml(title)}\"");
         sb.AppendLine($"date: {dateStr}");
@@ -51,7 +61,7 @@ public sealed partial class MarkdownMerger
             foreach (var kw in keywords)
                 sb.AppendLine($"  - \"{EscapeYaml(kw)}\"");
         }
-        sb.AppendLine("subject: \"Microsoft Learn\"");
+        sb.AppendLine($"subject: \"{subject}\"");
         sb.AppendLine($"description: \"{EscapeYaml(attributionDescription)}\"");
         sb.AppendLine("---");
         sb.AppendLine();
@@ -59,7 +69,7 @@ public sealed partial class MarkdownMerger
         // CC BY 4.0 attribution section — dedicated H1 paragraph (required by CC BY 4.0 Section 3(a))
         sb.AppendLine("# Attribution");
         sb.AppendLine();
-        sb.AppendLine("Content originally published on [Microsoft Learn](https://learn.microsoft.com), " +
+        sb.AppendLine("Content originally published by [Microsoft](https://microsoft.com), " +
             "© Microsoft Corporation, licensed under " +
             "[Creative Commons Attribution 4.0 International (CC BY 4.0)](https://creativecommons.org/licenses/by/4.0/). " +
             "Adapted for offline use — original content unmodified except for format conversion.");
@@ -83,24 +93,45 @@ public sealed partial class MarkdownMerger
 
         foreach (var content in contents)
         {
-            foreach (var module in content.Modules)
+            if (content.Type == ContentType.DocsSite)
             {
-                // Module title = H1
-                sb.AppendLine($"# {module.Title}");
-                sb.AppendLine();
-
-                foreach (var unit in module.Units)
+                // Docs mode: preserve original heading levels, concatenate pages with horizontal rules
+                foreach (var module in content.Modules)
                 {
-                    // Unit title = H2
-                    sb.AppendLine($"## {unit.Title}");
+                    foreach (var unit in module.Units)
+                    {
+                        if (!string.IsNullOrWhiteSpace(unit.MarkdownContent))
+                        {
+                            sb.AppendLine(unit.MarkdownContent.Trim());
+                            sb.AppendLine();
+                            sb.AppendLine("---");
+                            sb.AppendLine();
+                        }
+                    }
+                }
+            }
+            else
+            {
+                // Learn training mode: Module = H1, Unit = H2, content = H3+
+                foreach (var module in content.Modules)
+                {
+                    // Module title = H1
+                    sb.AppendLine($"# {module.Title}");
                     sb.AppendLine();
 
-                    if (!string.IsNullOrWhiteSpace(unit.MarkdownContent))
+                    foreach (var unit in module.Units)
                     {
-                        // Shift content headings so minimum becomes H3
-                        var adjustedContent = AdjustHeadingLevels(unit.MarkdownContent, 3);
-                        sb.AppendLine(adjustedContent.Trim());
+                        // Unit title = H2
+                        sb.AppendLine($"## {unit.Title}");
                         sb.AppendLine();
+
+                        if (!string.IsNullOrWhiteSpace(unit.MarkdownContent))
+                        {
+                            // Shift content headings so minimum becomes H3
+                            var adjustedContent = AdjustHeadingLevels(unit.MarkdownContent, 3);
+                            sb.AppendLine(adjustedContent.Trim());
+                            sb.AppendLine();
+                        }
                     }
                 }
             }

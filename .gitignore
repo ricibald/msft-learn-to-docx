@@ -17,6 +17,12 @@ project.lock.json
 
 ## Output
 output/
+coverage/
+
+## Temporary test/build files
+*.log
+build_*.txt
+test_output.txt
 
 ## OS
 Thumbs.db

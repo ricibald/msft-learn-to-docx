@@ -236,7 +236,7 @@ public sealed partial class DfmConverter
     [GeneratedRegex(@":::code\s+(.*?):::", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
     private static partial Regex CodeRefRegex();
 
-    [GeneratedRegex(@"\[!(?:i|I)(?:nclude|NCLUDE)\[.*?\]\(.*?\)\]")]
+    [GeneratedRegex(@"\[!(?:i|I)(?:nclude|NCLUDE)\s*\[.*?\]\(.*?\)\]")]
     private static partial Regex IncludeRegex();
 
     [GeneratedRegex(@"\n{3,}")]

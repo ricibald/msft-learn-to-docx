@@ -1,12 +1,13 @@
 # MsftLearnToDocx
 
+[![CI](https://github.com/ricibald/msft-learn-to-docx/actions/workflows/ci.yml/badge.svg)](https://github.com/ricibald/msft-learn-to-docx/actions/workflows/ci.yml)
 [![Docker Pulls](https://img.shields.io/docker/pulls/ricibald/msft-learn-to-docx)](https://hub.docker.com/r/ricibald/msft-learn-to-docx)
 [![Docker Image Size](https://img.shields.io/docker/image-size/ricibald/msft-learn-to-docx/latest)](https://hub.docker.com/r/ricibald/msft-learn-to-docx)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-blue.svg)](#prerequisites)
 [![Actively Maintained](https://img.shields.io/badge/Actively%20Maintained-Yes-green.svg)](#)
 
-.NET 8 console app that converts Microsoft Learn training paths and modules into a unified Markdown document and a Word (DOCX) file via **pandoc**.
+.NET 8 console app that converts Microsoft Learn training paths/modules, VS Code documentation, and Microsoft Docs sites into a unified Markdown document and a Word (DOCX) file via **pandoc**.
 
 > **Find learning paths**: browse all available Microsoft Learn paths at  
 > <https://learn.microsoft.com/en-us/training/browse/?resource_type=learning%20path>
@@ -59,6 +60,25 @@ docker run --rm `
 > The named Docker volume persists between container restarts automatically.
 
 Output is written to `./output/{slug}_{timestamp}/` on the host.
+
+---
+
+## Supported Sources
+
+| Source | Example URL | GitHub Repo |
+|--------|------------|-------------|
+| Learn training paths | `https://learn.microsoft.com/.../training/paths/copilot/` | `MicrosoftDocs/learn` |
+| Learn training modules | `https://learn.microsoft.com/.../training/modules/intro-to-copilot/` | `MicrosoftDocs/learn` |
+| VS Code docs | `https://code.visualstudio.com/docs/copilot/` | `microsoft/vscode-docs` (LFS) |
+| Azure DevOps docs | `https://learn.microsoft.com/.../azure/devops/repos/get-started` | `MicrosoftDocs/azure-devops-docs` |
+| .NET docs | `https://learn.microsoft.com/.../dotnet/core/introduction` | `dotnet/docs` |
+| Azure docs | `https://learn.microsoft.com/.../azure/storage/` | `MicrosoftDocs/azure-docs` |
+| SQL docs | `https://learn.microsoft.com/.../sql/...` | `MicrosoftDocs/sql-docs` |
+| PowerShell docs | `https://learn.microsoft.com/.../powershell/...` | `MicrosoftDocs/PowerShell-Docs` |
+| Visual Studio docs | `https://learn.microsoft.com/.../visualstudio/...` | `MicrosoftDocs/visualstudio-docs` |
+| Windows docs | `https://learn.microsoft.com/.../windows/...` | `MicrosoftDocs/windows-dev-docs` |
+
+Multiple URL types can be mixed in a single command — all content is merged into one document.
 
 ---
 
@@ -305,6 +325,18 @@ foreach ($path in $paths) {
 - [rsvg-convert](https://wiki.gnome.org/Projects/LibRsvg) (optional, for SVG images in DOCX) — `apt install librsvg2-bin` on Debian/Ubuntu, `brew install librsvg` on macOS, `choco install rsvg-convert` on Windows
 - (Optional) `GITHUB_TOKEN` environment variable for higher GitHub API rate limits
 
+## Development
+
+```bash
+# Build
+dotnet build
+
+# Run unit tests
+dotnet test Tests/MsftLearnToDocx.Tests.csproj
+```
+
+Test coverage: `DocsUrlParser` (URL routing), `DfmConverter` (DFM→MD), `MarkdownMerger` (heading hierarchy, frontmatter), `DocsDownloader` (frontmatter stripping, path resolution, image sanitization), `GitHubRawClient` (LFS pointer detection/parsing), `TocEntry` (model).
+
 ## Usage
 
 ```bash
@@ -314,8 +346,17 @@ dotnet run -- "https://learn.microsoft.com/en-us/training/paths/copilot/"
 # Single module
 dotnet run -- "https://learn.microsoft.com/en-us/training/modules/introduction-to-github-copilot/"
 
+# VS Code Copilot documentation
+dotnet run -- "https://code.visualstudio.com/docs/copilot/"
+
+# Azure DevOps Repos documentation
+dotnet run -- "https://learn.microsoft.com/en-us/azure/devops/repos/get-started"
+
 # Multiple URLs merged into one document
 dotnet run -- "https://learn.microsoft.com/en-us/training/paths/copilot/" "https://learn.microsoft.com/en-us/training/paths/gh-copilot-2/"
+
+# Mix training + docs in one document
+dotnet run -- "https://learn.microsoft.com/en-us/training/paths/copilot/" "https://code.visualstudio.com/docs/copilot/" --title "Copilot Guide"
 
 # With custom title and DOCX template
 dotnet run -- "https://learn.microsoft.com/.../paths/copilot/" --title "GitHub Copilot Guide" --template custom.docx
@@ -388,10 +429,18 @@ output/copilot_20260314-120000/
 
 ### Heading Hierarchy
 
+**Learn training mode:**
+
 - Module title = H1
 - Unit title = H2
 - Content headings within each unit = H3+
 - YAML frontmatter block (`title`, `date`) is used by pandoc to generate a Word cover page
+
+**Docs site mode:**
+
+- Original heading levels are preserved as-is (no wrapping or shifting)
+- Pages are separated by horizontal rules (`---`)
+- Title is auto-derived from the content path
 
 ### DOCX Template
 
@@ -407,8 +456,10 @@ dotnet run -- "<url>" --template path/to/custom-template.docx
 
 ```mermaid
 graph TD
-    A[Input URLs] --> B{Parse each URL}
-    B --> C[paths/slug or modules/slug]
+    A[Input URLs] --> B{DocsUrlParser}
+    B -->|Learn training| C[paths/slug or modules/slug]
+    B -->|Docs site| S[DocsDownloader]
+
     C -->|Path| D[Download path index.yml from GitHub]
     C -->|Module| E[Find module in learn-pr/]
     D --> F[For each module UID]
@@ -423,8 +474,21 @@ graph TD
     L --> O[Convert DFM → Standard Markdown]
     O --> P[Download media]
     E --> I
+
+    S --> T{toc.yml exists?}
+    T -->|Yes| U[Use TOC for page ordering]
+    T -->|No| V[Recursive dir listing]
+    U --> W[Download .md files + strip frontmatter]
+    V --> W
+    W --> X[Convert DFM + strip HTML blocks]
+    X --> Y[Remap & download images]
+    Y -->|LFS repo| Z[Detect LFS pointer → LFS Batch API]
+    Y -->|Normal repo| AA[raw.githubusercontent.com]
+
     P --> Q[Merge all contents with YAML frontmatter]
     M --> Q
+    Z --> Q
+    AA --> Q
     Q --> R[pandoc → DOCX]
 ```
 
@@ -482,12 +546,14 @@ Handled Docs-Flavored Markdown syntax:
 ├── .dockerignore               # Docker build exclusions
 ├── docker-compose.yml          # Docker Compose convenience config
 ├── Models/
-│   └── LearnModels.cs          # YAML, Catalog API, and downloaded content models
+│   └── LearnModels.cs          # YAML, Catalog API, docs repo, and downloaded content models
 ├── Services/
-│   ├── GitHubRawClient.cs      # Raw content download + Contents API
+│   ├── DocsUrlParser.cs        # URL → GitHub repo mapping (training, VS Code, MS Docs)
+│   ├── DocsDownloader.cs       # Generic docs download (recursive, TOC, LFS, DFM)
+│   ├── GitHubRawClient.cs      # Raw content download + Contents API (multi-repo + LFS)
 │   ├── LearnCatalogClient.cs   # Microsoft Learn Catalog API
 │   ├── ModuleResolver.cs       # UID → GitHub path resolution
-│   ├── ContentDownloader.cs    # Full download orchestration
+│   ├── ContentDownloader.cs    # Learn training download orchestration
 │   ├── DfmConverter.cs         # DFM → standard Markdown
 │   ├── MarkdownMerger.cs       # Merge + YAML frontmatter + heading normalization
 │   ├── PandocRunner.cs         # pandoc → DOCX conversion (with TOC)
@@ -536,7 +602,13 @@ A GitHub Actions workflow (`.github/workflows/docker-publish.yml`) automatically
 
 ### Source content
 
-All training content is fetched directly from the **[MicrosoftDocs/learn](https://github.com/MicrosoftDocs/learn)** public GitHub repository via the official GitHub API and the [Microsoft Learn Catalog API](https://learn.microsoft.com/en-us/training/support/catalog-api-developer-reference). This is **not web scraping** — it uses the same public APIs and raw content that GitHub serves to any authenticated or anonymous client.
+All content is fetched directly from public GitHub repositories via the official GitHub API and raw file endpoints:
+
+- **Learn training**: [MicrosoftDocs/learn](https://github.com/MicrosoftDocs/learn) + [Microsoft Learn Catalog API](https://learn.microsoft.com/en-us/training/support/catalog-api-developer-reference)
+- **VS Code docs**: [microsoft/vscode-docs](https://github.com/microsoft/vscode-docs) (Git LFS for images)
+- **Microsoft Docs**: various repos (e.g., [MicrosoftDocs/azure-devops-docs](https://github.com/MicrosoftDocs/azure-devops-docs), [dotnet/docs](https://github.com/dotnet/docs))
+
+This is **not web scraping** — it uses the same public APIs and raw content that GitHub serves to any authenticated or anonymous client.
 
 ### License
 

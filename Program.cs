@@ -1,5 +1,4 @@
 ﻿using System.Net.Http.Headers;
-using System.Text.RegularExpressions;
 using MsftLearnToDocx.Models;
 using MsftLearnToDocx.Services;
 
@@ -58,28 +57,44 @@ if (inputUrls.Count == 0)
 }
 
 // --- Parse all URLs ---
-var parsedUrls = inputUrls.Select(ParseLearnUrl).ToList();
-foreach (var (type, slug) in parsedUrls)
-    Console.WriteLine($"  Input: {type}/{slug}");
+var parsedUrls = inputUrls.Select(DocsUrlParser.Parse).ToList();
+foreach (var parsed in parsedUrls)
+{
+    switch (parsed)
+    {
+        case LearnTrainingUrl training:
+            Console.WriteLine($"  Input: {training.Type}/{training.Slug}");
+            break;
+        case DocsSiteUrl docs:
+            Console.WriteLine($"  Input: docs/{docs.RepoInfo.FullRepo}/{docs.RepoInfo.RepoContentPath}");
+            break;
+    }
+}
 
 // --- Verify pandoc (skip when markdown-only) ---
 if (format == "docx")
     PandocRunner.FindPandoc();
 
 // --- Create HTTP client ---
-using var httpClient = CreateHttpClient();
+var (httpClient, cacheDir) = CreateHttpClient();
 
 // --- Create services ---
 var catalogClient = new LearnCatalogClient(httpClient);
-var githubClient = new GitHubRawClient(httpClient);
+var githubClient = new GitHubRawClient(httpClient, cacheDir);
 var resolver = new ModuleResolver(catalogClient, githubClient);
 var dfmConverter = new DfmConverter();
 var downloader = new ContentDownloader(githubClient, resolver, dfmConverter);
+var docsDownloader = new DocsDownloader(githubClient, dfmConverter);
 var merger = new MarkdownMerger();
 var pandoc = new PandocRunner();
 
 // --- Create output directory ---
-var firstSlug = parsedUrls[0].slug;
+var firstSlug = parsedUrls[0] switch
+{
+    LearnTrainingUrl training => training.Slug,
+    DocsSiteUrl docs => docs.RepoInfo.ContentPath.Split('/').LastOrDefault(s => !string.IsNullOrEmpty(s)) ?? docs.RepoInfo.Repo,
+    _ => "output"
+};
 var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
 var isContainer = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true";
 var outputBase = isContainer ? "/output" : Path.Combine(Directory.GetCurrentDirectory(), "output");
@@ -104,21 +119,23 @@ else
 // --- Download content for all URLs ---
 var allContents = new List<DownloadedContent>();
 
-foreach (var (contentType, slug) in parsedUrls)
+foreach (var parsed in parsedUrls)
 {
-    Console.WriteLine($"\n=== Downloading: {contentType}/{slug} ===");
-    DownloadedContent content;
-
-    if (contentType == "paths")
+    switch (parsed)
     {
-        content = await downloader.DownloadPathAsync(slug, outputDir);
+        case LearnTrainingUrl { Type: "paths" } training:
+            Console.WriteLine($"\n=== Downloading Learn path: {training.Slug} ===");
+            allContents.Add(await downloader.DownloadPathAsync(training.Slug, outputDir));
+            break;
+        case LearnTrainingUrl training:
+            Console.WriteLine($"\n=== Downloading Learn module: {training.Slug} ===");
+            allContents.Add(await downloader.DownloadModuleBySlugAsync(training.Slug, outputDir));
+            break;
+        case DocsSiteUrl docs:
+            Console.WriteLine($"\n=== Downloading docs: {docs.RepoInfo.FullRepo}/{docs.RepoInfo.RepoContentPath} ===");
+            allContents.Add(await docsDownloader.DownloadAsync(docs.RepoInfo, outputDir));
+            break;
     }
-    else
-    {
-        content = await downloader.DownloadModuleBySlugAsync(slug, outputDir);
-    }
-
-    allContents.Add(content);
 }
 
 // --- Merge markdown (all contents into a single document) ---
@@ -143,22 +160,7 @@ return 0;
 
 // --- Helper methods ---
 
-static (string type, string slug) ParseLearnUrl(string url)
-{
-    // Support formats:
-    // https://learn.microsoft.com/en-us/training/paths/copilot/
-    // https://learn.microsoft.com/en-us/training/modules/introduction-to-github-copilot/
-    // https://learn.microsoft.com/training/paths/copilot
-    // paths/copilot or modules/introduction-to-github-copilot (shorthand)
-    var match = Regex.Match(url, @"(?:training/)?(paths|modules)/([^/?#]+)", RegexOptions.IgnoreCase);
-    if (!match.Success)
-        throw new ArgumentException(
-            $"Invalid URL format. Expected: https://learn.microsoft.com/.../training/paths/{{slug}} or .../modules/{{slug}}\nGot: {url}");
-
-    return (match.Groups[1].Value.ToLowerInvariant(), match.Groups[2].Value);
-}
-
-static HttpClient CreateHttpClient()
+static (HttpClient Client, string CacheDir) CreateHttpClient()
 {
     // Handler pipeline: CachingHandler → RetryHandler → HttpClientHandler
     string cacheDir;
@@ -193,23 +195,32 @@ static HttpClient CreateHttpClient()
         Console.WriteLine("No GITHUB_TOKEN set. Using unauthenticated requests (60 req/h rate limit for GitHub API).");
     }
 
-    return client;
+    return (client, cacheDir);
 }
 
 static void PrintUsage()
 {
     Console.WriteLine("""
-        MsftLearnToDocx - Convert Microsoft Learn paths/modules to Markdown and DOCX
+        MsftLearnToDocx - Convert Microsoft Learn & docs sites to Markdown and DOCX
 
         Usage:
           MsftLearnToDocx <url> [<url2> ...] [options]
 
         Arguments:
-          <url>    One or more Microsoft Learn URLs (paths or modules).
-                   Multiple URLs are merged into a single output document.
-                   Examples:
+          <url>    One or more URLs to download and merge. Supported sources:
+
+                   Learn training paths & modules:
                      https://learn.microsoft.com/en-us/training/paths/copilot/
                      https://learn.microsoft.com/en-us/training/modules/introduction-to-github-copilot/
+
+                   VS Code documentation:
+                     https://code.visualstudio.com/docs/copilot/
+
+                   Microsoft Docs sites:
+                     https://learn.microsoft.com/en-us/azure/devops/repos/get-started
+                     https://learn.microsoft.com/en-us/dotnet/core/introduction
+
+                   Multiple URLs are merged into a single output document.
 
         Options:
           --title <text>          Custom document title (used in cover page).
@@ -231,13 +242,19 @@ static void PrintUsage()
           # Single learning path
           MsftLearnToDocx "https://learn.microsoft.com/en-us/training/paths/copilot/"
 
+          # VS Code Copilot docs
+          MsftLearnToDocx "https://code.visualstudio.com/docs/copilot/"
+
+          # Azure DevOps Repos documentation
+          MsftLearnToDocx "https://learn.microsoft.com/en-us/azure/devops/repos/get-started"
+
           # Multiple modules merged into one document
           MsftLearnToDocx "https://learn.microsoft.com/.../modules/mod1/" "https://learn.microsoft.com/.../modules/mod2/"
 
           # Markdown only, custom output directory
           MsftLearnToDocx "https://learn.microsoft.com/.../paths/copilot/" -f md -o ./my-output
 
-          # With custom title and template
-          MsftLearnToDocx "https://learn.microsoft.com/.../paths/copilot/" --title "GitHub Copilot Guide" -t custom.docx
+          # Mix training + docs in one document
+          MsftLearnToDocx "https://learn.microsoft.com/.../training/paths/copilot/" "https://code.visualstudio.com/docs/copilot/" --title "Copilot Guide"
         """);
 }
