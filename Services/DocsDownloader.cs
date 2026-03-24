@@ -210,6 +210,25 @@ public sealed partial class DocsDownloader
     private sealed record TocFlatItem(string? Path, string? Title, int Depth, bool IsSectionHeader);
 
     /// <summary>
+    /// Deserializes toc.yml content which can be either a direct sequence (list of TocEntry)
+    /// or a mapping with an "items" key (e.g., Azure docs: {items: [...]}).
+    /// </summary>
+    private List<TocEntry>? DeserializeTocEntries(string tocYaml)
+    {
+        // Try as a direct list first (most common format)
+        try
+        {
+            return _yaml.Deserialize<List<TocEntry>>(tocYaml);
+        }
+        catch (YamlDotNet.Core.YamlException)
+        {
+            // Fall back to root mapping with "items" key
+            var root = _yaml.Deserialize<TocEntry>(tocYaml);
+            return root?.Items;
+        }
+    }
+
+    /// <summary>
     /// Collects pages in order: uses toc.yml if present (with hierarchy), otherwise falls back to alphabetical listing.
     /// </summary>
     private async Task<List<TocFlatItem>> CollectPagesAsync(DocsRepoInfo repo, string repoPath)
@@ -225,7 +244,7 @@ public sealed partial class DocsDownloader
         if (tocYaml is not null)
         {
             Console.WriteLine("  Using toc.yml for page ordering");
-            var tocEntries = _yaml.Deserialize<List<TocEntry>>(tocYaml);
+            var tocEntries = DeserializeTocEntries(tocYaml);
             if (tocEntries is not null)
                 return await FlattenTocWithDepthAsync(tocEntries, repoPath, repo, 0);
         }
@@ -286,7 +305,7 @@ public sealed partial class DocsDownloader
                     if (subTocContent is not null)
                     {
                         var subTocDir = Path.GetDirectoryName(subTocPath)?.Replace('\\', '/') ?? baseDir;
-                        var subEntries = _yaml.Deserialize<List<TocEntry>>(subTocContent);
+                        var subEntries = DeserializeTocEntries(subTocContent);
                         if (subEntries is not null)
                             result.AddRange(await FlattenTocWithDepthAsync(subEntries, subTocDir, repo, depth));
                     }

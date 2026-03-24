@@ -25,6 +25,8 @@
 2. `DocsUrlParser.Parse()` → `DocsSiteUrl` with `DocsRepoInfo` (owner, repo, branch, basePath, contentPath, usesLfs, liveSiteHost, liveSitePathPrefix)
 3. `DocsDownloader.DownloadAsync()`:
    a. Try to download `toc.yml` from the target directory for page ordering **with hierarchical depth tracking**
+      - Case-insensitive: tries both `toc.yml` and `TOC.yml` (GitHub raw URLs are case-sensitive, azure-docs uses uppercase)
+      - Supports both root-level sequence format (`[{name, href, items}]`) and root-level mapping format (`{items: [{name, href, items}]}`)
    b. If no toc.yml, recursively list directory and sort alphabetically (index.md/overview.md first)
    c. If path resolves to neither a directory nor a toc.yml, try appending `.md` for single-file download
    d. **TOC hierarchy**: section-only entries (name + items, no href) become section header units; pages carry their nesting depth
