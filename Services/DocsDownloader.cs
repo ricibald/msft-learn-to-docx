@@ -214,8 +214,14 @@ public sealed partial class DocsDownloader
     /// </summary>
     private async Task<List<TocFlatItem>> CollectPagesAsync(DocsRepoInfo repo, string repoPath)
     {
-        // Try to download toc.yml
-        var tocYaml = await _github.TryDownloadStringAsync(repo, $"{repoPath}/toc.yml");
+        // Try to download toc.yml (case-insensitive: some repos use TOC.yml)
+        string? tocYaml = null;
+        foreach (var tocName in new[] { "toc.yml", "TOC.yml" })
+        {
+            tocYaml = await _github.TryDownloadStringAsync(repo, $"{repoPath}/{tocName}");
+            if (tocYaml is not null) break;
+        }
+
         if (tocYaml is not null)
         {
             Console.WriteLine("  Using toc.yml for page ordering");
@@ -266,7 +272,17 @@ public sealed partial class DocsDownloader
                 if (href.EndsWith("toc.yml", StringComparison.OrdinalIgnoreCase))
                 {
                     var subTocPath = ResolveRelativePath(baseDir, href);
+
+                    // Try the original path first, then alternate case
                     var subTocContent = await _github.TryDownloadStringAsync(repo, subTocPath);
+                    if (subTocContent is null)
+                    {
+                        var altCase = subTocPath.EndsWith("toc.yml", StringComparison.Ordinal)
+                            ? subTocPath[..^7] + "TOC.yml"
+                            : subTocPath[..^7] + "toc.yml";
+                        subTocContent = await _github.TryDownloadStringAsync(repo, altCase);
+                    }
+
                     if (subTocContent is not null)
                     {
                         var subTocDir = Path.GetDirectoryName(subTocPath)?.Replace('\\', '/') ?? baseDir;
