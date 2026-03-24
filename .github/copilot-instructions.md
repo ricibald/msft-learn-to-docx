@@ -58,6 +58,7 @@
 ### Known Structural Exceptions in the MicrosoftDocs/learn Repo
 - **UID ≠ directory name**: `learn.github.copilot-spaces` → `introduction-copilot-spaces`, `learn.github-copilot-with-javascript` → `introduction-copilot-javascript`
 - **Parent dir ≠ uid prefix**: `learn.wwl.*` → `learn-pr/wwl-azure/` (not `wwl/`); modules without provider (e.g., `learn.advanced-github-copilot`) may live in `learn-pr/github/`
+- **Cross-repo modules**: some learning paths reference modules from private repos (e.g., `learn-bizapps.*` → `MicrosoftDocs/learn-bizapps-pr`, which is not publicly accessible). `ContentDownloader.DownloadModuleByUidSafeAsync` handles these by creating a placeholder module with a warning blockquote in the output document, plus a console warning. The module title is fetched from the Catalog API when possible
 - **Numbered unit YAML files**: `1-introduction.yml`, `2-xxx.yml`; matched by slug in filename
 - **Knowledge check units**: `quiz:` field appears as a root-level YAML key (not inside `content: |`) — handled via `Quiz` property in `UnitYaml`
 - **Units without content**: sandbox exercises may have empty content → skipped
@@ -67,6 +68,7 @@
 - `DocsDownloader`: downloads generic docs from GitHub repos recursively. Uses `toc.yml` for page ordering (including recursive sub-TOC resolution for nested `toc.yml` references), handles image remapping, strips frontmatter/HTML blocks. Supports single-file path resolution (appends `.md`)
 - `GitHubRawClient`: raw.githubusercontent.com for content + api.github.com/contents for directory listing. Supports both default `MicrosoftDocs/learn` repo and arbitrary repos via `DocsRepoInfo` overloads. LFS-aware downloads via Git LFS Batch API
 - `LearnCatalogClient`: `https://learn.microsoft.com/api/catalog/?uid=...&type=modules` — no authentication required
+- `ContentDownloader`: downloads Learn training content (paths + modules + units). Accepts `LearnCatalogClient` for Catalog API lookups. Handles unresolvable modules gracefully via `DownloadModuleByUidSafeAsync` (placeholder with warning in document)
 - `ModuleResolver`: heuristic parent dir (from uid prefix) + fallback full scan of learn-pr/
 - `DfmConverter`: regex-based, converts :::image:::, [!NOTE], [!div], :::zone:::, [!VIDEO], :::code:::, etc. Also runs `EnsureBlankLineBeforeLists` to inject a blank line before any list block that immediately follows a paragraph (prevents pandoc from rendering bullets as inline text).
 - `MarkdownMerger`: YAML frontmatter generation + CC BY 4.0 attribution. Two merge modes:

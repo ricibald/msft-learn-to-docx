@@ -12,13 +12,15 @@ public sealed class ContentDownloader
 {
     private readonly GitHubRawClient _github;
     private readonly ModuleResolver _resolver;
+    private readonly LearnCatalogClient _catalog;
     private readonly DfmConverter _dfmConverter;
     private readonly IDeserializer _yaml;
 
-    public ContentDownloader(GitHubRawClient github, ModuleResolver resolver, DfmConverter dfmConverter)
+    public ContentDownloader(GitHubRawClient github, ModuleResolver resolver, LearnCatalogClient catalog, DfmConverter dfmConverter)
     {
         _github = github;
         _resolver = resolver;
+        _catalog = catalog;
         _dfmConverter = dfmConverter;
         _yaml = new DeserializerBuilder()
             .WithNamingConvention(CamelCaseNamingConvention.Instance)
@@ -51,7 +53,7 @@ public sealed class ContentDownloader
             var moduleUid = pathYaml.Modules[i];
             Console.WriteLine($"\n[{i + 1}/{pathYaml.Modules.Count}] Module: {moduleUid}");
 
-            var module = await DownloadModuleByUidAsync(moduleUid, outputDir, i + 1);
+            var module = await DownloadModuleByUidSafeAsync(moduleUid, outputDir, i + 1);
             content.Modules.Add(module);
         }
 
@@ -86,13 +88,65 @@ public sealed class ContentDownloader
         return content;
     }
 
-    private async Task<DownloadedModule> DownloadModuleByUidAsync(string moduleUid, string outputDir, int moduleIndex)
+    private async Task<DownloadedModule> DownloadModuleByUidSafeAsync(string moduleUid, string outputDir, int moduleIndex)
     {
-        var modulePath = await _resolver.ResolveModulePathAsync(moduleUid);
-        var moduleYamlStr = await _github.DownloadStringAsync($"{modulePath}/index.yml");
-        var moduleYaml = _yaml.Deserialize<ModuleYaml>(moduleYamlStr);
+        try
+        {
+            var modulePath = await _resolver.ResolveModulePathAsync(moduleUid);
+            var moduleYamlStr = await _github.DownloadStringAsync($"{modulePath}/index.yml");
+            var moduleYaml = _yaml.Deserialize<ModuleYaml>(moduleYamlStr);
 
-        return await DownloadModuleInternalAsync(moduleYaml, modulePath, outputDir, moduleIndex);
+            return await DownloadModuleInternalAsync(moduleYaml, modulePath, outputDir, moduleIndex);
+        }
+        catch (InvalidOperationException ex)
+        {
+            Console.WriteLine($"\n  [WARN] Cannot download module '{moduleUid}': {ex.Message}");
+            Console.WriteLine($"  [WARN] The module will appear as a placeholder in the output document.");
+
+            // Try to get the real title from the Catalog API
+            var title = await GetModuleTitleFromCatalogAsync(moduleUid);
+
+            var uidParts = moduleUid.Split('.');
+            var learnUrl = $"https://learn.microsoft.com/training/modules/{uidParts[^1]}/";
+            var warningContent =
+                $"> **⚠ Module not available for download**\n" +
+                $">\n" +
+                $"> This module (*{moduleUid}*) could not be downloaded because its source content " +
+                $"is hosted in a private repository that is not publicly accessible.\n" +
+                $">\n" +
+                $"> You can view this module online at: <{learnUrl}>";
+
+            return new DownloadedModule
+            {
+                Title = title,
+                Uid = moduleUid,
+                Units =
+                [
+                    new DownloadedUnit
+                    {
+                        Title = "Content Unavailable",
+                        Uid = $"{moduleUid}.unavailable",
+                        MarkdownContent = warningContent
+                    }
+                ]
+            };
+        }
+    }
+
+    private async Task<string> GetModuleTitleFromCatalogAsync(string moduleUid)
+    {
+        try
+        {
+            var catalogModule = await _catalog.GetModuleAsync(moduleUid);
+            return catalogModule.Title;
+        }
+        catch
+        {
+            // Derive a readable title from the UID slug as last resort
+            var slugParts = moduleUid.Split('.');
+            return System.Globalization.CultureInfo.CurrentCulture.TextInfo
+                .ToTitleCase(slugParts[^1].Replace('-', ' '));
+        }
     }
 
     private async Task<DownloadedModule> DownloadModuleInternalAsync(
