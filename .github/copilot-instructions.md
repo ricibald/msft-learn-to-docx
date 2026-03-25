@@ -27,8 +27,9 @@
    a. Try to download `toc.yml` from the target directory for page ordering **with hierarchical depth tracking**
       - Case-insensitive: tries both `toc.yml` and `TOC.yml` (GitHub raw URLs are case-sensitive, azure-docs uses uppercase)
       - Supports both root-level sequence format (`[{name, href, items}]`) and root-level mapping format (`{items: [{name, href, items}]}`)
-   b. If no toc.yml, recursively list directory and sort alphabetically (index.md/overview.md first)
-   c. If path resolves to neither a directory nor a toc.yml, try appending `.md` for single-file download
+   b. If no toc.yml, try `toc.json` from the docs root (used by vscode-docs). Format: `[{name, area, topics: [[title, path], ...]}]` with nested sections as `["", "", {name, topics}]`
+   c. If no toc found, recursively list directory and sort alphabetically (index.md/overview.md first)
+   d. If path resolves to neither a directory nor a toc, try appending `.md` for single-file download
    d. **TOC hierarchy**: section-only entries (name + items, no href) become section header units; pages carry their nesting depth
    e. Download each .md file, strip YAML frontmatter, remap image paths to `media/` output dir
    f. Apply DFM conversion + strip HTML blocks (`<video>`, `<div>`)
@@ -83,7 +84,7 @@
 
 ### Key Services
 - `DocsUrlParser`: static class that parses all URL types → `LearnTrainingUrl | DocsSiteUrl`. Known mapping table + locale stripping
-- `DocsDownloader`: downloads generic docs from GitHub repos recursively. Uses `toc.yml` for page ordering (including recursive sub-TOC resolution for nested `toc.yml` references), handles image remapping, strips frontmatter/HTML blocks. Supports single-file path resolution (appends `.md`). Handles DocFX `~/` repo-root paths in both includes and image references. Converts reference-style image links (`![alt][ref]` + `[ref]: path`) to inline format to avoid duplicate reference IDs when merging multiple pages
+- `DocsDownloader`: downloads generic docs from GitHub repos recursively. Uses `toc.yml` for page ordering (including recursive sub-TOC resolution for nested `toc.yml` references) or `toc.json` from docs root (vscode-docs format: `[{name, area, topics}]` with nested sections). Handles image remapping, strips frontmatter/HTML blocks. Supports single-file path resolution (appends `.md`). Handles DocFX `~/` repo-root paths in both includes and image references. Converts reference-style image links (`![alt][ref]` + `[ref]: path`) to inline format to avoid duplicate reference IDs when merging multiple pages
 - `GitHubRawClient`: raw.githubusercontent.com for content + api.github.com/contents for directory listing. Supports both default `MicrosoftDocs/learn` repo and arbitrary repos via `DocsRepoInfo` overloads. LFS-aware downloads via Git LFS Batch API
 - `LearnCatalogClient`: `https://learn.microsoft.com/api/catalog/?uid=...&type=modules` — no authentication required
 - `ContentDownloader`: downloads Learn training content (paths + modules + units). Accepts `LearnCatalogClient` for Catalog API lookups. Handles unresolvable modules gracefully via `DownloadModuleByUidSafeAsync` (placeholder with warning in document)

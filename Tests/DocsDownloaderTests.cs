@@ -194,4 +194,102 @@ public class DocsDownloaderTests
         // Image should be collected for download
         Assert.Contains(allImagePaths, p => p.Contains("blob.png"));
     }
+
+    // --- ParseTocJsonSection ---
+
+    [Fact]
+    public void ParseTocJsonSection_ExtractsMatchingSection()
+    {
+        var json = """
+            [
+              {"name": "Setup", "area": "setup", "topics": [["Overview", "/docs/setup/overview"]]},
+              {"name": "Copilot", "area": "copilot", "topics": [
+                ["Overview", "/docs/copilot/overview"],
+                ["Setup", "/docs/copilot/setup"],
+                ["Getting Started", "/docs/copilot/getting-started"]
+              ]}
+            ]
+            """;
+
+        var result = DocsDownloader.ParseTocJsonSection(json, "copilot", "docs");
+
+        Assert.Equal(3, result.Count);
+        Assert.Equal("docs/copilot/overview.md", result[0].Path);
+        Assert.Equal("Overview", result[0].Title);
+        Assert.Equal("docs/copilot/setup.md", result[1].Path);
+        Assert.Equal("docs/copilot/getting-started.md", result[2].Path);
+    }
+
+    [Fact]
+    public void ParseTocJsonSection_HandlesNestedSections()
+    {
+        var json = """
+            [
+              {"name": "Copilot", "area": "copilot", "topics": [
+                ["Overview", "/docs/copilot/overview"],
+                ["", "", {"name": "Agents", "area": "copilot/agents", "topics": [
+                  ["Agent Overview", "/docs/copilot/agents/overview"],
+                  ["Tutorial", "/docs/copilot/agents/tutorial"]
+                ]}]
+              ]}
+            ]
+            """;
+
+        var result = DocsDownloader.ParseTocJsonSection(json, "copilot", "docs");
+
+        Assert.Equal(4, result.Count);
+        Assert.Equal("docs/copilot/overview.md", result[0].Path);
+        Assert.False(result[0].IsSectionHeader);
+        Assert.Equal(0, result[0].Depth);
+
+        Assert.Null(result[1].Path);
+        Assert.Equal("Agents", result[1].Title);
+        Assert.True(result[1].IsSectionHeader);
+        Assert.Equal(0, result[1].Depth);
+
+        Assert.Equal("docs/copilot/agents/overview.md", result[2].Path);
+        Assert.Equal(1, result[2].Depth);
+
+        Assert.Equal("docs/copilot/agents/tutorial.md", result[3].Path);
+        Assert.Equal(1, result[3].Depth);
+    }
+
+    [Fact]
+    public void ParseTocJsonSection_NoMatchingArea_ReturnsEmpty()
+    {
+        var json = """[{"name": "Setup", "area": "setup", "topics": [["Overview", "/docs/setup/overview"]]}]""";
+
+        var result = DocsDownloader.ParseTocJsonSection(json, "copilot", "docs");
+
+        Assert.Empty(result);
+    }
+
+    // --- IsRedirectPage ---
+
+    [Fact]
+    public void IsRedirectPage_FrontmatterWithRedirectUrl_ReturnsTrue()
+    {
+        var raw = "---\nredirect_url: /azure/some-page\ntitle: Old Page\n---\n# Old Page\nSome content";
+        var stripped = DocsDownloader.StripFrontmatter(raw);
+
+        Assert.True(DocsDownloader.IsRedirectPage(raw, stripped));
+    }
+
+    [Fact]
+    public void IsRedirectPage_ShortBodyWithRedirect_ReturnsTrue()
+    {
+        var raw = "---\ntitle: Redirect Page\n---\n# Review code\nThis page is redirected to https://example.com.";
+        var stripped = DocsDownloader.StripFrontmatter(raw);
+
+        Assert.True(DocsDownloader.IsRedirectPage(raw, stripped));
+    }
+
+    [Fact]
+    public void IsRedirectPage_NormalPage_ReturnsFalse()
+    {
+        var raw = "---\ntitle: Normal Page\n---\n# Normal Page\n" + new string('x', 600);
+        var stripped = DocsDownloader.StripFrontmatter(raw);
+
+        Assert.False(DocsDownloader.IsRedirectPage(raw, stripped));
+    }
 }

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using MsftLearnToDocx.Models;
 using YamlDotNet.Serialization;
@@ -84,7 +85,15 @@ public sealed partial class DocsDownloader
             }
 
             // Strip YAML frontmatter from individual pages
+            var rawMarkdown = markdown;
             markdown = StripFrontmatter(markdown);
+
+            // Skip redirect stubs (pages that only redirect to another URL)
+            if (IsRedirectPage(rawMarkdown, markdown))
+            {
+                Console.WriteLine(" (redirect, skipped)");
+                continue;
+            }
 
             // Extract title from first H1 if not provided by toc.yml
             var title = item.Title ?? ExtractFirstHeading(markdown) ?? Path.GetFileNameWithoutExtension(item.Path);
@@ -207,7 +216,7 @@ public sealed partial class DocsDownloader
     /// <summary>
     /// Represents a flattened TOC item with depth and section-header information.
     /// </summary>
-    private sealed record TocFlatItem(string? Path, string? Title, int Depth, bool IsSectionHeader);
+    internal sealed record TocFlatItem(string? Path, string? Title, int Depth, bool IsSectionHeader);
 
     /// <summary>
     /// Deserializes toc.yml content which can be either a direct sequence (list of TocEntry)
@@ -229,7 +238,9 @@ public sealed partial class DocsDownloader
     }
 
     /// <summary>
-    /// Collects pages in order: uses toc.yml if present (with hierarchy), otherwise falls back to alphabetical listing.
+    /// Collects pages in order: uses toc.yml if present (with hierarchy),
+    /// then tries toc.json from docs root (vscode-docs format),
+    /// otherwise falls back to alphabetical listing.
     /// </summary>
     private async Task<List<TocFlatItem>> CollectPagesAsync(DocsRepoInfo repo, string repoPath)
     {
@@ -249,10 +260,25 @@ public sealed partial class DocsDownloader
                 return await FlattenTocWithDepthAsync(tocEntries, repoPath, repo, 0);
         }
 
+        // Try toc.json from the docs root (used by vscode-docs)
+        var tocJsonPath = $"{repo.DocsBasePath}/toc.json";
+        var tocJson = await _github.TryDownloadStringAsync(repo, tocJsonPath);
+        if (tocJson is not null)
+        {
+            // Find the section matching the content path area (e.g., "copilot" from "docs/copilot")
+            var area = repo.ContentPath;
+            var pages = ParseTocJsonSection(tocJson, area, repo.DocsBasePath);
+            if (pages.Count > 0)
+            {
+                Console.WriteLine("  Using toc.json for page ordering");
+                return pages;
+            }
+        }
+
         // Try directory listing first (flat, depth 0)
-        var pages = await CollectPagesFromDirectoryAsync(repo, repoPath);
-        if (pages.Count > 0)
-            return pages;
+        var dirPages = await CollectPagesFromDirectoryAsync(repo, repoPath);
+        if (dirPages.Count > 0)
+            return dirPages;
 
         // If directory listing returned nothing, the path may be a single file — try appending .md
         if (!repoPath.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
@@ -338,6 +364,93 @@ public sealed partial class DocsDownloader
             {
                 var nested = await FlattenTocWithDepthAsync(entry.Items!, baseDir, repo, depth + 1);
                 result.AddRange(nested);
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Parses a toc.json file (vscode-docs format) and extracts the section matching the given area.
+    /// Format: array of [title, path] or [_, _, {name, area, topics:[...]}].
+    /// </summary>
+    internal static List<TocFlatItem> ParseTocJsonSection(string json, string area, string docsBasePath)
+    {
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+
+        if (root.ValueKind != JsonValueKind.Array)
+            return [];
+
+        // Find the top-level section matching the area
+        foreach (var section in root.EnumerateArray())
+        {
+            if (section.ValueKind != JsonValueKind.Object)
+                continue;
+
+            if (!section.TryGetProperty("area", out var areaProp) ||
+                !area.Equals(areaProp.GetString(), StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (!section.TryGetProperty("topics", out var topics))
+                continue;
+
+            return FlattenTocJsonTopics(topics, docsBasePath, 0);
+        }
+
+        return [];
+    }
+
+    /// <summary>
+    /// Recursively flattens toc.json topics into TocFlatItems.
+    /// Each topic is either ["Title", "/docs/path"] or ["", "", {name, topics}].
+    /// </summary>
+    private static List<TocFlatItem> FlattenTocJsonTopics(JsonElement topics, string docsBasePath, int depth)
+    {
+        var result = new List<TocFlatItem>();
+
+        if (topics.ValueKind != JsonValueKind.Array)
+            return result;
+
+        foreach (var entry in topics.EnumerateArray())
+        {
+            if (entry.ValueKind != JsonValueKind.Array)
+                continue;
+
+            var arrayLen = entry.GetArrayLength();
+
+            // Check if this is a nested section: ["", "", {name, topics}]
+            if (arrayLen >= 3)
+            {
+                var third = entry[2];
+                if (third.ValueKind == JsonValueKind.Object &&
+                    third.TryGetProperty("name", out var nameProp) &&
+                    third.TryGetProperty("topics", out var subTopics))
+                {
+                    var sectionName = nameProp.GetString();
+                    if (!string.IsNullOrEmpty(sectionName))
+                        result.Add(new TocFlatItem(null, sectionName, depth, true));
+
+                    result.AddRange(FlattenTocJsonTopics(subTopics, docsBasePath, depth + 1));
+                    continue;
+                }
+            }
+
+            // Leaf page: ["Title", "/docs/copilot/page"]
+            if (arrayLen >= 2)
+            {
+                var title = entry[0].GetString();
+                var path = entry[1].GetString();
+
+                if (string.IsNullOrEmpty(title) || string.IsNullOrEmpty(path))
+                    continue;
+
+                // Convert URL path to repo path: /docs/copilot/page → docs/copilot/page.md
+                var repoPath = path.TrimStart('/');
+                if (!repoPath.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
+                    repoPath += ".md";
+
+                result.Add(new TocFlatItem(repoPath, title, depth, false));
             }
         }
 
@@ -451,6 +564,26 @@ public sealed partial class DocsDownloader
     {
         var match = FrontmatterRegex().Match(markdown);
         return match.Success ? markdown[match.Length..].TrimStart('\n', '\r') : markdown;
+    }
+
+    /// <summary>
+    /// Detects redirect pages: either YAML frontmatter contains redirect_url,
+    /// or the stripped content body is short and mentions "redirect".
+    /// </summary>
+    internal static bool IsRedirectPage(string rawMarkdown, string strippedMarkdown)
+    {
+        // Check frontmatter for redirect_url (used by MicrosoftDocs repos)
+        var frontmatter = FrontmatterRegex().Match(rawMarkdown);
+        if (frontmatter.Success &&
+            frontmatter.Value.Contains("redirect_url", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        // Check for short body that mentions "redirect" (used by vscode-docs)
+        if (strippedMarkdown.Length < 500 &&
+            strippedMarkdown.Contains("redirect", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return false;
     }
 
     /// <summary>
