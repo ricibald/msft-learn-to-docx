@@ -12,6 +12,7 @@ namespace MsftLearnToDocx.Tests;
 /// E2E test for code.visualstudio.com/docs/copilot/getting-started (single page, LFS repo).
 /// Verifies the full pipeline download → merge → pandoc with Git LFS image support.
 /// </summary>
+[Trait("Category", "E2E")]
 public sealed class E2eVscodeDocsTests : IDisposable
 {
     private readonly string _outputDir;

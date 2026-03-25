@@ -12,6 +12,7 @@ namespace MsftLearnToDocx.Tests;
 /// E2E integration tests for Learn training URLs (Catalog API + unit YAML + DFM flow).
 /// Covers both single-module and learning-path downloads.
 /// </summary>
+[Trait("Category", "E2E")]
 public sealed class E2eLearnTrainingTests : IDisposable
 {
     private readonly string _outputDir;

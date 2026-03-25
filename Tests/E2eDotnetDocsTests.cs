@@ -12,6 +12,7 @@ namespace MsftLearnToDocx.Tests;
 /// E2E test for learn.microsoft.com/dotnet/core/extensions/dependency-injection.
 /// Verifies the full pipeline for dotnet/docs repo.
 /// </summary>
+[Trait("Category", "E2E")]
 public sealed class E2eDotnetDocsTests : IDisposable
 {
     private readonly string _outputDir;

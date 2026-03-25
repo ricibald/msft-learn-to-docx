@@ -13,6 +13,7 @@ namespace MsftLearnToDocx.Tests;
 /// and verifies the full pipeline (download → markdown merge → pandoc DOCX conversion)
 /// produces zero errors and zero warnings.
 /// </summary>
+[Trait("Category", "E2E")]
 public sealed class E2eAzureBlobsTests : IDisposable
 {
     private readonly string _outputDir;

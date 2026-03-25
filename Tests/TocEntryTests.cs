@@ -2,6 +2,7 @@ using MsftLearnToDocx.Models;
 
 namespace MsftLearnToDocx.Tests;
 
+[Trait("Category", "Unit")]
 public class TocEntryTests
 {
     [Fact]

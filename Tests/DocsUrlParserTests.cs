@@ -3,6 +3,7 @@ using MsftLearnToDocx.Services;
 
 namespace MsftLearnToDocx.Tests;
 
+[Trait("Category", "Unit")]
 public class DocsUrlParserTests
 {
     // --- Learn training URLs ---

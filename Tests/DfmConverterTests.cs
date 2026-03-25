@@ -3,6 +3,7 @@ using MsftLearnToDocx.Services;
 
 namespace MsftLearnToDocx.Tests;
 
+[Trait("Category", "Unit")]
 public class DfmConverterTests
 {
     private readonly DfmConverter _converter = new();
