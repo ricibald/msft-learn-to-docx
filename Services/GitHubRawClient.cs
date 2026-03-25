@@ -314,17 +314,20 @@ public sealed class GitHubRawClient
         }
 
         Console.WriteLine($"\r  LFS: {resolved}/{lfsPointers.Count} objects resolved                    ");
+
         return failedPaths;
     }
 
     /// <summary>
     /// Calls the Git LFS Batch API with multiple OIDs and downloads all resolved objects.
     /// Uses OID-based file cache to avoid re-downloading unchanged content.
+    /// Splits large requests into chunks of 100 objects (GitHub's per-request limit).
     /// Returns a dictionary mapping OID → binary content.
     /// </summary>
     private async Task<Dictionary<string, byte[]>> ResolveLfsBatchAsync(
         DocsRepoInfo repo, IReadOnlyList<(string Oid, long Size)> objects)
     {
+        const int maxBatchSize = 100;
         var result = new Dictionary<string, byte[]>();
 
         // Check OID cache first
@@ -344,64 +347,82 @@ public sealed class GitHubRawClient
         if (uncachedObjects.Count == 0)
             return result;
 
+        // Split into chunks of maxBatchSize to respect GitHub's per-request limit
+        var chunks = uncachedObjects
+            .Select((obj, i) => (obj, i))
+            .GroupBy(x => x.i / maxBatchSize)
+            .Select(g => g.Select(x => x.obj).ToList())
+            .ToList();
+
         var batchUrl = $"https://github.com/{repo.FullRepo}.git/info/lfs/objects/batch";
-        var requestBody = JsonSerializer.Serialize(new
+
+        for (var chunkIndex = 0; chunkIndex < chunks.Count; chunkIndex++)
         {
-            operation = "download",
-            transfers = new[] { "basic" },
-            objects = uncachedObjects.Select(o => new { oid = o.Oid, size = o.Size }).ToArray()
-        });
+            var chunk = chunks[chunkIndex];
+            if (chunks.Count > 1)
+                Console.Write($" [batch {chunkIndex + 1}/{chunks.Count}]");
 
-        var request = new HttpRequestMessage(HttpMethod.Post, batchUrl)
-        {
-            Content = new StringContent(requestBody, System.Text.Encoding.UTF8, "application/vnd.git-lfs+json")
-        };
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.git-lfs+json"));
-
-        var response = await _lfsHttp.SendAsync(request);
-        if (!response.IsSuccessStatusCode)
-            return result;
-
-        var json = await response.Content.ReadAsStringAsync();
-        using var doc = JsonDocument.Parse(json);
-
-        if (!doc.RootElement.TryGetProperty("objects", out var objectsArray))
-            return result;
-
-        foreach (var obj in objectsArray.EnumerateArray())
-        {
-            if (!obj.TryGetProperty("oid", out var oidProp))
-                continue;
-            var oid = oidProp.GetString();
-            if (oid is null)
-                continue;
-
-            if (!obj.TryGetProperty("actions", out var actions) ||
-                !actions.TryGetProperty("download", out var download) ||
-                !download.TryGetProperty("href", out var href))
-                continue;
-
-            var downloadUrl = href.GetString();
-            if (string.IsNullOrEmpty(downloadUrl))
-                continue;
-
-            var downloadRequest = new HttpRequestMessage(HttpMethod.Get, downloadUrl);
-            if (download.TryGetProperty("header", out var headers))
+            var requestBody = JsonSerializer.Serialize(new
             {
-                foreach (var header in headers.EnumerateObject())
-                {
-                    var headerValue = header.Value.GetString();
-                    if (headerValue is not null)
-                        downloadRequest.Headers.TryAddWithoutValidation(header.Name, headerValue);
-                }
+                operation = "download",
+                transfers = new[] { "basic" },
+                objects = chunk.Select(o => new { oid = o.Oid, size = o.Size }).ToArray()
+            });
+
+            var request = new HttpRequestMessage(HttpMethod.Post, batchUrl)
+            {
+                Content = new StringContent(requestBody, System.Text.Encoding.UTF8, "application/vnd.git-lfs+json")
+            };
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.git-lfs+json"));
+
+            var response = await _lfsHttp.SendAsync(request);
+            if (!response.IsSuccessStatusCode)
+            {
+                Console.WriteLine($"\n  [WARN] LFS Batch API returned HTTP {(int)response.StatusCode} for chunk {chunkIndex + 1}");
+                continue;
             }
 
-            var downloadResponse = await _lfsHttp.SendAsync(downloadRequest);
-            if (downloadResponse.IsSuccessStatusCode)
+            var json = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
+
+            if (!doc.RootElement.TryGetProperty("objects", out var objectsArray))
+                continue;
+
+            foreach (var obj in objectsArray.EnumerateArray())
             {
-                var bytes = await downloadResponse.Content.ReadAsByteArrayAsync();
-                result[oid] = bytes;
-                WriteLfsCache(oid, bytes);
+                if (!obj.TryGetProperty("oid", out var oidProp))
+                    continue;
+                var oid = oidProp.GetString();
+                if (oid is null)
+                    continue;
+
+                if (!obj.TryGetProperty("actions", out var actions) ||
+                    !actions.TryGetProperty("download", out var download) ||
+                    !download.TryGetProperty("href", out var href))
+                    continue;
+
+                var downloadUrl = href.GetString();
+                if (string.IsNullOrEmpty(downloadUrl))
+                    continue;
+
+                var downloadRequest = new HttpRequestMessage(HttpMethod.Get, downloadUrl);
+                if (download.TryGetProperty("header", out var headers))
+                {
+                    foreach (var header in headers.EnumerateObject())
+                    {
+                        var headerValue = header.Value.GetString();
+                        if (headerValue is not null)
+                            downloadRequest.Headers.TryAddWithoutValidation(header.Name, headerValue);
+                    }
+                }
+
+                var downloadResponse = await _lfsHttp.SendAsync(downloadRequest);
+                if (downloadResponse.IsSuccessStatusCode)
+                {
+                    var bytes = await downloadResponse.Content.ReadAsByteArrayAsync();
+                    result[oid] = bytes;
+                    WriteLfsCache(oid, bytes);
+                }
             }
         }
 

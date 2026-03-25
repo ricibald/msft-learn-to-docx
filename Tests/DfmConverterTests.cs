@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using MsftLearnToDocx.Services;
 
 namespace MsftLearnToDocx.Tests;
@@ -104,6 +105,29 @@ public class DfmConverterTests
         Assert.Contains("Windows content", result);
         Assert.Contains("Linux content", result);
         Assert.DoesNotContain("zone pivot", result);
+    }
+
+    [Fact]
+    public void Convert_ZoneMarkers_WithoutTrailingColons_RemovesStartAndEnd()
+    {
+        // Azure-docs uses zone markers without trailing :::
+        var input = "::: zone pivot=\"blob-storage-quickstart-scratch\"\nScratch content\n::: zone-end";
+        var result = _converter.Convert(input);
+        Assert.DoesNotContain("::: zone", result);
+        Assert.DoesNotContain("zone-end", result);
+        Assert.Contains("Scratch content", result);
+    }
+
+    [Fact]
+    public void Convert_ZoneMarkers_MixedFormats_RemovesBoth()
+    {
+        // Mix of with and without trailing :::
+        var input = ":::zone target=\"docs\":::\nContent A\n:::zone-end:::\n::: zone pivot=\"csharp\"\nContent B\n::: zone-end";
+        var result = _converter.Convert(input);
+        Assert.DoesNotContain(":::zone", result);
+        Assert.DoesNotContain("zone-end", result);
+        Assert.Contains("Content A", result);
+        Assert.Contains("Content B", result);
     }
 
     // --- [!VIDEO] conversion ---
@@ -271,5 +295,37 @@ public class DfmConverterTests
         Assert.Equal("src/app.cs", refs[0].Source);
         Assert.Equal("csharp", refs[0].Language);
         Assert.Equal("1-5", refs[0].Range);
+    }
+
+    // --- EscapeFalseMathDollars ---
+
+    [Fact]
+    public void Convert_DollarBeforeBacktick_Escaped()
+    {
+        // Metric names with $ before backtick-delimited pipes
+        var input = "Select **UsedCapacity$`|`BlobCapacity$`|`FileCapacity$** columns.";
+        var result = _converter.Convert(input);
+        // $ before backtick should be escaped to \$
+        Assert.Contains(@"\$`", result);
+        // Count of \$ should match count of $` in original (2 occurrences: $`, not $**)
+        Assert.Equal(2, Regex.Matches(result, @"\\\$`").Count);
+    }
+
+    [Fact]
+    public void Convert_DollarInCodeBlock_NotEscaped()
+    {
+        // $ inside code blocks should not be affected (backtick is part of the code fence)
+        var input = "```powershell\n$Variable = 'test'\n```";
+        var result = _converter.Convert(input);
+        Assert.Contains("$Variable", result);
+    }
+
+    [Fact]
+    public void Convert_DollarMath_PreservedWhenNotAdjacentToBacktick()
+    {
+        // Normal math-like usage without backtick adjacency should not be escaped
+        var input = "The formula is $x^2 + y^2 = z^2$ rendered inline.";
+        var result = _converter.Convert(input);
+        Assert.Contains("$x^2", result);
     }
 }

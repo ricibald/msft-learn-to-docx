@@ -23,6 +23,8 @@ coverage/
 *.log
 build_*.txt
 test_output.txt
+diag*.txt
+TestResults/
 
 ## OS
 Thumbs.db

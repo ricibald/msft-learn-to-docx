@@ -29,6 +29,7 @@ public sealed partial class DfmConverter
         result = CleanupIncludeRefs(result);
         result = EnsureBlankLineBeforeLists(result);
         result = EnsureBlankLinesAroundHorizontalRules(result);
+        result = EscapeFalseMathDollars(result);
         result = CleanupTrailingWhitespace(result);
 
         return result;
@@ -206,6 +207,19 @@ public sealed partial class DfmConverter
         return result;
     }
 
+    /// <summary>
+    /// Escapes $ characters that pandoc would falsely interpret as TeX math delimiters.
+    /// Targets $ immediately adjacent to backticks ($` or `$) which never occurs in valid TeX math.
+    /// </summary>
+    private static string EscapeFalseMathDollars(string markdown)
+    {
+        // $` (dollar before backtick) → \$` — e.g., metric names like UsedCapacity$`|`
+        var result = DollarBeforeBacktick().Replace(markdown, @"\$$$1");
+        // `$ (backtick before dollar) → `\$ — e.g., `|`microsoft...Capacity$
+        result = BacktickBeforeDollar().Replace(result, @"$1\$$");
+        return result;
+    }
+
     private static string CleanupTrailingWhitespace(string markdown)
     {
         // Remove excessive blank lines (more than 2 consecutive)
@@ -235,10 +249,10 @@ public sealed partial class DfmConverter
     [GeneratedRegex(@">\s*\[!div\s+class=""[^""]*""\]\s*\r?\n?", RegexOptions.Multiline | RegexOptions.IgnoreCase)]
     private static partial Regex DivBlockRegex();
 
-    [GeneratedRegex(@":::\s*zone\s+[^:]*?\s*:::\s*\r?\n?", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"^:::\s*zone\s+[^\n]*$\r?\n?", RegexOptions.IgnoreCase | RegexOptions.Multiline)]
     private static partial Regex ZoneStartRegex();
 
-    [GeneratedRegex(@":::\s*zone-end\s*:::\s*\r?\n?", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"^:::\s*zone-end\b[^\n]*$\r?\n?", RegexOptions.IgnoreCase | RegexOptions.Multiline)]
     private static partial Regex ZoneEndRegex();
 
     [GeneratedRegex(@":::(row|column|row-end|column-end)(?:\s+[^:]*)?:::\s*\r?\n?", RegexOptions.IgnoreCase)]
@@ -255,6 +269,12 @@ public sealed partial class DfmConverter
 
     [GeneratedRegex(@"\n{3,}")]
     private static partial Regex ExcessiveBlankLines();
+
+    [GeneratedRegex(@"\$(`)", RegexOptions.Compiled)]
+    private static partial Regex DollarBeforeBacktick();
+
+    [GeneratedRegex(@"(`)\$", RegexOptions.Compiled)]
+    private static partial Regex BacktickBeforeDollar();
 
     /// <summary>
     /// Matches a non-blank, non-list line (group 1) immediately followed (no blank line) by a

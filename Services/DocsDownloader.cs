@@ -422,6 +422,10 @@ public sealed partial class DocsDownloader
             return match.Value.Replace(match.Groups[1].Value, $"media/{localName}");
         });
 
+        // Reference-style image links: ![alt][ref] + [ref]: path
+        // Convert to inline format to avoid duplicates when merging pages
+        markdown = InlineRefStyleImageLinks(markdown, pageDir, contentBasePath, allImagePaths);
+
         return markdown;
     }
 
@@ -491,6 +495,10 @@ public sealed partial class DocsDownloader
     /// </summary>
     internal static string ResolveRelativePath(string baseDir, string relativePath)
     {
+        // DocFX ~/... means repo root — don't prepend baseDir
+        if (relativePath.StartsWith("~/", StringComparison.Ordinal))
+            return relativePath[2..];
+
         var combined = string.IsNullOrEmpty(baseDir) ? relativePath : $"{baseDir}/{relativePath}";
         var parts = combined.Split('/').ToList();
 
@@ -549,6 +557,59 @@ public sealed partial class DocsDownloader
         return result;
     }
 
+    /// <summary>
+    /// Converts reference-style image links (![alt][ref] + [ref]: path) to inline format.
+    /// This prevents duplicate reference IDs when multiple pages are merged and ensures
+    /// image paths are properly remapped and collected for download.
+    /// </summary>
+    private static string InlineRefStyleImageLinks(string markdown, string pageDir,
+        string contentBasePath, HashSet<string> allImagePaths)
+    {
+        // Collect reference definitions: [ref]: path
+        var refDefs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (Match m in RefLinkDefRegex().Matches(markdown))
+        {
+            var refId = m.Groups[1].Value;
+            var path = m.Groups[2].Value.Trim();
+            refDefs[refId] = path;
+        }
+
+        if (refDefs.Count == 0)
+            return markdown;
+
+        // Identify which refs are used as images: ![alt][ref]
+        var imageRefs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (Match m in RefStyleImageRegex().Matches(markdown))
+            imageRefs.Add(m.Groups[2].Value);
+
+        // Replace ![alt][ref] with inline ![alt](media/remapped) for image refs with local paths
+        markdown = RefStyleImageRegex().Replace(markdown, match =>
+        {
+            var alt = match.Groups[1].Value;
+            var refId = match.Groups[2].Value;
+
+            if (!refDefs.TryGetValue(refId, out var imagePath))
+                return match.Value;
+
+            if (imagePath.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+                return $"![{alt}]({imagePath})";
+
+            var resolvedPath = ResolveRelativePath(pageDir, imagePath);
+            allImagePaths.Add(resolvedPath);
+            var localName = SanitizeImageFileName(resolvedPath, contentBasePath);
+            return $"![{alt}](media/{localName})";
+        });
+
+        // Remove reference definitions that were used as images
+        markdown = RefLinkDefRegex().Replace(markdown, match =>
+        {
+            var refId = match.Groups[1].Value;
+            return imageRefs.Contains(refId) ? "" : match.Value;
+        });
+
+        return markdown;
+    }
+
     // Regex patterns
 
     [GeneratedRegex(@"\[!(?:i|I)(?:nclude|NCLUDE)\[([^\]]*)\]\(([^)]+)\)\]")]
@@ -571,4 +632,10 @@ public sealed partial class DocsDownloader
 
     [GeneratedRegex(@"<div\b[^>]*>[\s\S]*?</div>", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
     private static partial Regex DivBlockRegex();
+
+    [GeneratedRegex(@"^\[([^\]]+)\]:\s*(\S+)$", RegexOptions.Multiline | RegexOptions.Compiled)]
+    private static partial Regex RefLinkDefRegex();
+
+    [GeneratedRegex(@"!\[([^\]]*)\]\[([^\]]+)\]", RegexOptions.Compiled)]
+    private static partial Regex RefStyleImageRegex();
 }

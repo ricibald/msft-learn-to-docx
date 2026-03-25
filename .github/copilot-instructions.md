@@ -61,6 +61,7 @@
 - LFS detection is only active when `DocsRepoInfo.UsesLfs == true` (set per mapping)
 - The `_lfsHttp` client also handles the final binary download using auth headers returned by the LFS server in the batch response
 - `DownloadLfsFilesAsync` returns failed repo paths so callers can try live site fallback
+- **GitHub imposes a 100-object limit** on the LFS Batch API: `ResolveLfsBatchAsync` splits large requests into chunks of ≤100 objects to avoid HTTP 413 (`"More than 100 objects specified."`)
 
 ### Known Structural Exceptions in the MicrosoftDocs/learn Repo
 - **UID ≠ directory name**: `learn.github.copilot-spaces` → `introduction-copilot-spaces`, `learn.github-copilot-with-javascript` → `introduction-copilot-javascript`
@@ -71,14 +72,23 @@
 - **Knowledge check units**: `quiz:` field appears as a root-level YAML key (not inside `content: |`) — handled via `Quiz` property in `UnitYaml`
 - **Units without content**: sandbox exercises may have empty content → skipped
 
+### DocFX / DFM Path Conventions
+- **Tilde prefix `~/`**: In DocFX Markdown, `~/` means the root of the repository (not relative to the current file). `DocsDownloader.ResolveRelativePath` detects this prefix and resolves directly from repo root instead of prepending the page's directory. Example: `:::image source="~/reusable-content/ce-skilling/azure/media/img.png":::` resolves to `reusable-content/ce-skilling/azure/media/img.png` (no `articles/` prefix)
+- **Zone markers without trailing `:::`**: Some repos (notably `MicrosoftDocs/azure-docs`) use zone markers without the closing `:::` delimiter: `::: zone pivot="..."` and `::: zone-end`. `DfmConverter.ZoneStartRegex`/`ZoneEndRegex` handle both formats (with and without trailing `:::`)
+- **Reference-style image links**: Some docs pages use numeric reference-style image links (`![alt][0]` with `[0]: media/img.png` definitions). When merging pages, these numeric IDs collide. `DocsDownloader.InlineRefStyleImageLinks` converts them to inline format (`![alt](media/remapped.png)`) and removes the definitions, solving both duplicate refs and path remapping
+
+### Known Pandoc Warnings (Non-Actionable)
+- **SVG conversion**: `rsvg-convert` tool is only available in the Docker image (Alpine package `rsvg-convert`). On local Windows/macOS dev, SVG images produce `Could not convert image ... rsvg-convert: does not exist` — these are harmless (SVG is still embedded)
+- **False TeX math**: Content using literal `$` characters (e.g., metric names like `storageaccounts-Capacity-BlobCapacity$`) may trigger `Could not convert TeX math` warnings. This is inherent to the source content, not a pipeline bug
+
 ### Key Services
 - `DocsUrlParser`: static class that parses all URL types → `LearnTrainingUrl | DocsSiteUrl`. Known mapping table + locale stripping
-- `DocsDownloader`: downloads generic docs from GitHub repos recursively. Uses `toc.yml` for page ordering (including recursive sub-TOC resolution for nested `toc.yml` references), handles image remapping, strips frontmatter/HTML blocks. Supports single-file path resolution (appends `.md`)
+- `DocsDownloader`: downloads generic docs from GitHub repos recursively. Uses `toc.yml` for page ordering (including recursive sub-TOC resolution for nested `toc.yml` references), handles image remapping, strips frontmatter/HTML blocks. Supports single-file path resolution (appends `.md`). Handles DocFX `~/` repo-root paths in both includes and image references. Converts reference-style image links (`![alt][ref]` + `[ref]: path`) to inline format to avoid duplicate reference IDs when merging multiple pages
 - `GitHubRawClient`: raw.githubusercontent.com for content + api.github.com/contents for directory listing. Supports both default `MicrosoftDocs/learn` repo and arbitrary repos via `DocsRepoInfo` overloads. LFS-aware downloads via Git LFS Batch API
 - `LearnCatalogClient`: `https://learn.microsoft.com/api/catalog/?uid=...&type=modules` — no authentication required
 - `ContentDownloader`: downloads Learn training content (paths + modules + units). Accepts `LearnCatalogClient` for Catalog API lookups. Handles unresolvable modules gracefully via `DownloadModuleByUidSafeAsync` (placeholder with warning in document)
 - `ModuleResolver`: heuristic parent dir (from uid prefix) + fallback full scan of learn-pr/
-- `DfmConverter`: regex-based, converts :::image:::, [!NOTE], [!div], :::zone:::, [!VIDEO], :::code:::, etc. Also runs `EnsureBlankLineBeforeLists` to inject a blank line before any list block that immediately follows a paragraph (prevents pandoc from rendering bullets as inline text). Also runs `EnsureBlankLinesAroundHorizontalRules` to ensure pandoc correctly treats `---` as horizontal rules (not YAML or setext headings). Zone pivot markers (`:::zone pivot="...":::` / `:::zone-end:::`) are stripped while keeping all pivot content.
+- `DfmConverter`: regex-based, converts :::image:::, [!NOTE], [!div], :::zone:::, [!VIDEO], :::code:::, etc. Also runs `EnsureBlankLineBeforeLists` to inject a blank line before any list block that immediately follows a paragraph (prevents pandoc from rendering bullets as inline text). Also runs `EnsureBlankLinesAroundHorizontalRules` to ensure pandoc correctly treats `---` as horizontal rules (not YAML or setext headings). Zone pivot markers are stripped with or without trailing `:::` (both `:::zone pivot="...":::` and `::: zone pivot="..."` formats supported, matching azure-docs conventions)
 - `MarkdownMerger`: YAML frontmatter generation + CC BY 4.0 attribution + download summary section. Two merge modes:
   - **Learn training**: Module = H1, Unit = H2, content = H3+ (heading shift applied)
   - **Docs site**: TOC-based heading hierarchy — section headers become headings at TOC depth, page titles at depth+1, content headings shifted accordingly. Duplicate leading H1 removed when matching TOC title. Pages separated by `---` horizontal rules
@@ -123,7 +133,9 @@
 ### Testing
 - xUnit test project at `Tests/MsftLearnToDocx.Tests.csproj`, added to solution
 - **IMPORTANT**: Main `MsftLearnToDocx.csproj` excludes `Tests\**` via `DefaultItemExcludes` to prevent SDK glob from including test files in the main compilation
-- Test files: `DocsUrlParserTests.cs` (URL parsing + LiveSiteUrl, 15 tests), `GitHubRawClientTests.cs` (LFS pointer detection/parsing via reflection), `TocEntryTests.cs` (model tests), `DfmConverterTests.cs` (DFM→MD conversion, zone pivots with spaces, HR blank lines, image title stripping, 27 tests), `MarkdownMergerTests.cs` (heading hierarchy, TOC-based docs-site hierarchy, frontmatter, subject, attribution, download summary, placeholders, duplicate title removal, 23 tests), `DocsDownloaderTests.cs` (StripFrontmatter, StripHtmlBlocks, SanitizeImageFileName, ResolveRelativePath, DeriveTitleFromPath, trailing HR removal, 13 tests)
+- Test files: `DocsUrlParserTests.cs` (URL parsing + LiveSiteUrl, 15 tests), `GitHubRawClientTests.cs` (LFS pointer detection/parsing via reflection), `TocEntryTests.cs` (model tests), `DfmConverterTests.cs` (DFM→MD conversion, zone pivots with/without trailing `:::`, HR blank lines, image title stripping, 31 tests), `MarkdownMergerTests.cs` (heading hierarchy, TOC-based docs-site hierarchy, frontmatter, subject, attribution, download summary, placeholders, duplicate title removal, 23 tests), `DocsDownloaderTests.cs` (StripFrontmatter, StripHtmlBlocks, SanitizeImageFileName, ResolveRelativePath including `~/` tilde repo-root, DeriveTitleFromPath, ref-style image link inlining, trailing HR removal, 16 tests), `E2eAzureBlobsTests.cs` (full pipeline: download azure/storage/blobs → merge → pandoc, 2 tests), `E2eVscodeDocsTests.cs` (single page LFS download: code.visualstudio.com/docs/copilot/getting-started + directory download: docs/copilot with 61 pages and 146 LFS images, 2 tests), `E2eDotnetDocsTests.cs` (dotnet/docs: dependency-injection directory, 1 test), `E2eLearnTrainingTests.cs` (Learn training: single module introduction-to-github-copilot + learning path copilot, 2 tests)
+- **E2E test design**: E2E tests use file-based assertions (checking `DownloadedContent` model properties and files on disk) instead of `Console.SetOut`/`Console.SetError` to avoid `ObjectDisposedException` when tests run in parallel. Compare image references in merged markdown against files in `media/` directory
+- E2E tests hit real GitHub API + pandoc and take ~1 minute each; filter with `--filter "FullyQualifiedName!~E2e"` for unit-only runs
 - Run tests: `dotnet test Tests/MsftLearnToDocx.Tests.csproj`
 - CI: `.github/workflows/ci.yml` — .NET 8 build + test on every push/PR
 

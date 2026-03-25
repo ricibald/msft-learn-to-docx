@@ -103,6 +103,21 @@ public class DocsDownloaderTests
             DocsDownloader.ResolveRelativePath("a/b/c", "../../d/file.md"));
     }
 
+    [Fact]
+    public void ResolveRelativePath_TildePrefix_ResolvesAsRepoRoot()
+    {
+        // ~/... is DocFX syntax for repo root — should NOT prepend baseDir
+        Assert.Equal("reusable-content/ce-skilling/azure/media/storage/img.png",
+            DocsDownloader.ResolveRelativePath("articles/storage/common", "~/reusable-content/ce-skilling/azure/media/storage/img.png"));
+    }
+
+    [Fact]
+    public void ResolveRelativePath_TildePrefixWithEmptyBase_ResolvesAsRepoRoot()
+    {
+        Assert.Equal("some/path/file.md",
+            DocsDownloader.ResolveRelativePath("", "~/some/path/file.md"));
+    }
+
     // --- DeriveTitleFromPath ---
 
     [Fact]
@@ -148,5 +163,34 @@ public class DocsDownloaderTests
         var result = merger.Merge([content], date: new DateTime(2025, 1, 1));
         var trimmed = result.TrimEnd();
         Assert.False(trimmed.EndsWith("---"), "Merged output should not end with a trailing horizontal rule");
+    }
+
+    // --- InlineRefStyleImageLinks (via RemapImagePaths) ---
+
+    [Fact]
+    public void StripFrontmatter_RefStyleImageLinks_ConvertedToInline()
+    {
+        // Simulate what RemapImagePaths does with reference-style image links
+        // by testing the overall flow: the ref-style link should be inlined
+        var input = "Some text\n\n![Screenshot of blobs][0]\n\n[0]: media/blob.png\n";
+
+        // We test the InlineRefStyleImageLinks indirectly through RemapImagePaths
+        // by using reflection or by testing the result of the public workflow.
+        // For simplicity, we test the InlineRefStyleImageLinks method via its effect
+        // on the markdown. Since RemapImagePaths is private, we verify via the full page process output.
+
+        // Use the internal helper method available via DocsDownloader
+        var allImagePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var method = typeof(DocsDownloader).GetMethod("InlineRefStyleImageLinks",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var result = (string)method!.Invoke(null, [input, "articles/storage", "articles", allImagePaths])!;
+
+        // Reference-style should be converted to inline
+        Assert.DoesNotContain("[0]:", result);
+        Assert.Contains("![Screenshot of blobs](media/", result);
+        // Image should be collected for download
+        Assert.Contains(allImagePaths, p => p.Contains("blob.png"));
     }
 }
