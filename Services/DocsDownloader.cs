@@ -372,7 +372,10 @@ public sealed partial class DocsDownloader
 
     /// <summary>
     /// Parses a toc.json file (vscode-docs format) and extracts the section matching the given area.
-    /// Format: array of [title, path] or [_, _, {name, area, topics:[...]}].
+    /// Searches recursively: top-level sections first, then nested sections within topics.
+    /// When area is empty, returns ALL sections from the toc.json (entire docs site).
+    /// This handles repos like vscode-docs where a single toc.json covers all areas,
+    /// with nested sub-areas (e.g., "copilot/agents") embedded inside parent areas (e.g., "copilot").
     /// </summary>
     internal static List<TocFlatItem> ParseTocJsonSection(string json, string area, string docsBasePath)
     {
@@ -382,23 +385,102 @@ public sealed partial class DocsDownloader
         if (root.ValueKind != JsonValueKind.Array)
             return [];
 
-        // Find the top-level section matching the area
+        // Empty area → return all sections from the toc.json
+        if (string.IsNullOrEmpty(area))
+            return FlattenAllTocJsonSections(root, docsBasePath);
+
+        // Search for the section matching the area, recursively through nested sections
+        var topics = FindAreaInTocJsonSections(root, area);
+        if (topics is null)
+            return [];
+
+        return FlattenTocJsonTopics(topics.Value, docsBasePath, 0);
+    }
+
+    /// <summary>
+    /// Flattens all top-level sections from the toc.json into a single flat list.
+    /// Each top-level section becomes a section header at depth 0, with its topics at depth 1+.
+    /// </summary>
+    private static List<TocFlatItem> FlattenAllTocJsonSections(JsonElement root, string docsBasePath)
+    {
+        var result = new List<TocFlatItem>();
+
         foreach (var section in root.EnumerateArray())
         {
             if (section.ValueKind != JsonValueKind.Object)
                 continue;
 
-            if (!section.TryGetProperty("area", out var areaProp) ||
-                !area.Equals(areaProp.GetString(), StringComparison.OrdinalIgnoreCase))
+            if (!section.TryGetProperty("name", out var nameProp) ||
+                !section.TryGetProperty("topics", out var topics))
                 continue;
 
-            if (!section.TryGetProperty("topics", out var topics))
-                continue;
+            var sectionName = nameProp.GetString();
+            if (!string.IsNullOrEmpty(sectionName))
+                result.Add(new TocFlatItem(null, sectionName, 0, true));
 
-            return FlattenTocJsonTopics(topics, docsBasePath, 0);
+            result.AddRange(FlattenTocJsonTopics(topics, docsBasePath, 1));
         }
 
-        return [];
+        return result;
+    }
+
+    /// <summary>
+    /// Searches top-level toc.json sections (objects with area + topics) for an exact area match.
+    /// If not found at top level, recurses into each section's topics to find nested sub-areas.
+    /// </summary>
+    private static JsonElement? FindAreaInTocJsonSections(JsonElement sections, string area)
+    {
+        foreach (var section in sections.EnumerateArray())
+        {
+            if (section.ValueKind != JsonValueKind.Object)
+                continue;
+
+            if (!section.TryGetProperty("area", out var areaProp) ||
+                !section.TryGetProperty("topics", out var topics))
+                continue;
+
+            if (area.Equals(areaProp.GetString(), StringComparison.OrdinalIgnoreCase))
+                return topics;
+
+            // Recurse into this section's topics to find nested sub-areas
+            var nested = FindAreaInTocJsonTopics(topics, area);
+            if (nested is not null)
+                return nested;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Searches within a topics array for nested section objects matching the given area.
+    /// Nested sections appear as ["", "", {name, area, topics}] entries.
+    /// </summary>
+    private static JsonElement? FindAreaInTocJsonTopics(JsonElement topics, string area)
+    {
+        if (topics.ValueKind != JsonValueKind.Array)
+            return null;
+
+        foreach (var entry in topics.EnumerateArray())
+        {
+            if (entry.ValueKind != JsonValueKind.Array || entry.GetArrayLength() < 3)
+                continue;
+
+            var third = entry[2];
+            if (third.ValueKind != JsonValueKind.Object ||
+                !third.TryGetProperty("area", out var areaProp) ||
+                !third.TryGetProperty("topics", out var subTopics))
+                continue;
+
+            if (area.Equals(areaProp.GetString(), StringComparison.OrdinalIgnoreCase))
+                return subTopics;
+
+            // Continue recursion for deeper nesting
+            var nested = FindAreaInTocJsonTopics(subTopics, area);
+            if (nested is not null)
+                return nested;
+        }
+
+        return null;
     }
 
     /// <summary>

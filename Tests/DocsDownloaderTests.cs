@@ -264,6 +264,114 @@ public class DocsDownloaderTests
         Assert.Empty(result);
     }
 
+    [Fact]
+    public void ParseTocJsonSection_FindsNestedSubArea()
+    {
+        var json = """
+            [
+              {"name": "Setup", "area": "setup", "topics": [["Overview", "/docs/setup/overview"]]},
+              {"name": "Copilot", "area": "copilot", "topics": [
+                ["Overview", "/docs/copilot/overview"],
+                ["", "", {"name": "Agents", "area": "copilot/agents", "topics": [
+                  ["Agent Overview", "/docs/copilot/agents/overview"],
+                  ["Tutorial", "/docs/copilot/agents/tutorial"]
+                ]}],
+                ["", "", {"name": "Chat", "area": "copilot/chat", "topics": [
+                  ["Chat Overview", "/docs/copilot/chat/overview"]
+                ]}]
+              ]}
+            ]
+            """;
+
+        // Request only the "copilot/agents" sub-area → should return only agents topics
+        var result = DocsDownloader.ParseTocJsonSection(json, "copilot/agents", "docs");
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal("docs/copilot/agents/overview.md", result[0].Path);
+        Assert.Equal("Agent Overview", result[0].Title);
+        Assert.Equal(0, result[0].Depth);
+        Assert.Equal("docs/copilot/agents/tutorial.md", result[1].Path);
+        Assert.Equal("Tutorial", result[1].Title);
+    }
+
+    [Fact]
+    public void ParseTocJsonSection_FindsDeeplyNestedSubArea()
+    {
+        var json = """
+            [
+              {"name": "Copilot", "area": "copilot", "topics": [
+                ["Overview", "/docs/copilot/overview"],
+                ["", "", {"name": "Reference", "area": "copilot/reference", "topics": [
+                  ["Cheat Sheet", "/docs/copilot/reference/cheat-sheet"],
+                  ["", "", {"name": "API", "area": "copilot/reference/api", "topics": [
+                    ["Endpoints", "/docs/copilot/reference/api/endpoints"]
+                  ]}]
+                ]}]
+              ]}
+            ]
+            """;
+
+        // Request deeply nested area
+        var result = DocsDownloader.ParseTocJsonSection(json, "copilot/reference/api", "docs");
+
+        Assert.Single(result);
+        Assert.Equal("docs/copilot/reference/api/endpoints.md", result[0].Path);
+        Assert.Equal("Endpoints", result[0].Title);
+    }
+
+    [Fact]
+    public void ParseTocJsonSection_EmptyArea_ReturnsAllSections()
+    {
+        var json = """
+            [
+              {"name": "Setup", "area": "setup", "topics": [
+                ["Overview", "/docs/setup/overview"],
+                ["Linux", "/docs/setup/linux"]
+              ]},
+              {"name": "Copilot", "area": "copilot", "topics": [
+                ["Overview", "/docs/copilot/overview"],
+                ["", "", {"name": "Agents", "area": "copilot/agents", "topics": [
+                  ["Agent Overview", "/docs/copilot/agents/overview"]
+                ]}]
+              ]}
+            ]
+            """;
+
+        // Empty area → returns all sections flattened with section headers
+        var result = DocsDownloader.ParseTocJsonSection(json, "", "docs");
+
+        // Section "Setup" (header) + 2 pages + Section "Copilot" (header) + 1 page + subsection "Agents" (header) + 1 page = 7
+        Assert.Equal(7, result.Count);
+
+        // Setup section header at depth 0
+        Assert.True(result[0].IsSectionHeader);
+        Assert.Equal("Setup", result[0].Title);
+        Assert.Equal(0, result[0].Depth);
+
+        // Setup pages at depth 1
+        Assert.Equal("docs/setup/overview.md", result[1].Path);
+        Assert.Equal(1, result[1].Depth);
+        Assert.Equal("docs/setup/linux.md", result[2].Path);
+
+        // Copilot section header at depth 0
+        Assert.True(result[3].IsSectionHeader);
+        Assert.Equal("Copilot", result[3].Title);
+        Assert.Equal(0, result[3].Depth);
+
+        // Copilot page at depth 1
+        Assert.Equal("docs/copilot/overview.md", result[4].Path);
+        Assert.Equal(1, result[4].Depth);
+
+        // Agents subsection header at depth 1
+        Assert.True(result[5].IsSectionHeader);
+        Assert.Equal("Agents", result[5].Title);
+        Assert.Equal(1, result[5].Depth);
+
+        // Agents page at depth 2
+        Assert.Equal("docs/copilot/agents/overview.md", result[6].Path);
+        Assert.Equal(2, result[6].Depth);
+    }
+
     // --- IsRedirectPage ---
 
     [Fact]
