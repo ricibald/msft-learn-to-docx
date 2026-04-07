@@ -39,7 +39,7 @@ public sealed class LearnCatalogClient
     }
 
     /// <summary>
-    /// Gets learning path metadata from the Catalog API.
+    /// Gets learning path metadata from the Catalog API by exact UID.
     /// </summary>
     public async Task<CatalogLearningPath> GetLearningPathAsync(string uid)
     {
@@ -55,6 +55,45 @@ public sealed class LearnCatalogClient
             throw new InvalidOperationException($"Learning path not found in Learn Catalog: {uid}");
 
         return response.LearningPaths[0];
+    }
+
+    // Known UID namespace prefixes for learning paths, ordered by frequency.
+    // Some paths (e.g., learn.wwl.*) have no index.yml in the GitHub repo and
+    // must be resolved entirely through the Catalog API.
+    private static readonly string[] LearningPathUidPrefixes =
+    [
+        "learn.wwl.",
+        "learn.",
+        "learn.m365.",
+        "learn.azure.",
+        "learn.dotnet.",
+        "learn.github.",
+    ];
+
+    /// <summary>
+    /// Finds a learning path in the Catalog API by URL slug, trying known UID namespace prefixes.
+    /// Throws if no matching UID is found.
+    /// </summary>
+    public async Task<CatalogLearningPath> FindLearningPathBySlugAsync(string pathSlug)
+    {
+        var jsonOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+
+        foreach (var prefix in LearningPathUidPrefixes)
+        {
+            var uid = $"{prefix}{pathSlug}";
+            var url = $"{BaseUrl}?uid={Uri.EscapeDataString(uid)}&type=learningPaths";
+            var json = await _http.GetStringAsync(url);
+            var response = JsonSerializer.Deserialize<CatalogLearningPathResponse>(json, jsonOptions);
+            if (response?.LearningPaths is { Count: > 0 })
+            {
+                Console.WriteLine($"  Resolved path UID: {uid}");
+                return response.LearningPaths[0];
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"Learning path '{pathSlug}' not found in Microsoft Learn Catalog. " +
+            $"Tried UID prefixes: {string.Join(", ", LearningPathUidPrefixes.Select(p => p + pathSlug))}");
     }
 
     /// <summary>

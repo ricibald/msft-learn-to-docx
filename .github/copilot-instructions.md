@@ -12,7 +12,7 @@
 ### Data Flow — Learn Training (existing)
 1. Input: one or more learn.microsoft.com training URLs + optional `--title` + optional DOCX template
 2. Parse each URL → type (paths/modules) + slug
-3. Download index.yml from GitHub raw (`learn-pr/paths/{slug}/index.yml` or module search)
+3. Download index.yml from GitHub raw (`learn-pr/paths/{slug}/index.yml` or module search). If not found (e.g., `learn.wwl.*` paths whose content lives only in the Catalog API), fall back to `LearnCatalogClient.FindLearningPathBySlugAsync` which tries known UID prefixes (`learn.wwl.`, `learn.`, `learn.m365.`, …) to resolve the module list
 4. For each module: Catalog API → directory name → GitHub scan parent dirs → download unit YAML
 5. For each unit: download markdown from includes/ + download media from media/
 6. DFM → standard Markdown conversion (regex-based)
@@ -42,19 +42,19 @@
 
 ### URL → Repo Mapping (`DocsUrlParser`)
 - Each mapping includes `LiveSiteHost` and `LiveSitePathPrefix` for fallback image downloads from the live site
-- `code.visualstudio.com/docs/*` → `microsoft/vscode-docs`, branch `main`, docs path `docs/`, **LFS enabled**
-- `learn.microsoft.com/*/azure/devops/*` → `MicrosoftDocs/azure-devops-docs`, `docs/`
-- `learn.microsoft.com/*/dotnet/*` → `dotnet/docs`, `docs/`
-- `learn.microsoft.com/*/azure/*` → `MicrosoftDocs/azure-docs`, `articles/`
-- `learn.microsoft.com/*/sql/*` → `MicrosoftDocs/sql-docs`, `docs/`
-- `learn.microsoft.com/*/powershell/*` → `MicrosoftDocs/PowerShell-Docs`, `reference/`
-- `learn.microsoft.com/*/visualstudio/*` → `MicrosoftDocs/visualstudio-docs`, `docs/`
-- `learn.microsoft.com/*/windows/*` → `MicrosoftDocs/windows-dev-docs`, `uwp/`
+- `code.visualstudio.com/docs/*` → [`microsoft/vscode-docs`](https://github.com/microsoft/vscode-docs), branch `main`, docs path `docs/`, **LFS enabled**
+- `learn.microsoft.com/*/azure/devops/*` → [`MicrosoftDocs/azure-devops-docs`](https://github.com/MicrosoftDocs/azure-devops-docs), `docs/`
+- `learn.microsoft.com/*/dotnet/*` → [`dotnet/docs`](https://github.com/dotnet/docs), `docs/`
+- `learn.microsoft.com/*/azure/*` → [`MicrosoftDocs/azure-docs`](https://github.com/MicrosoftDocs/azure-docs), `articles/`
+- `learn.microsoft.com/*/sql/*` → [`MicrosoftDocs/sql-docs`](https://github.com/MicrosoftDocs/sql-docs), `docs/`
+- `learn.microsoft.com/*/powershell/*` → [`MicrosoftDocs/PowerShell-Docs`](https://github.com/MicrosoftDocs/PowerShell-Docs), `reference/`
+- `learn.microsoft.com/*/visualstudio/*` → [`MicrosoftDocs/visualstudio-docs`](https://github.com/MicrosoftDocs/visualstudio-docs), `docs/`
+- `learn.microsoft.com/*/windows/*` → [`MicrosoftDocs/windows-dev-docs`](https://github.com/MicrosoftDocs/windows-dev-docs), `uwp/`
 - Locale segment (e.g., `en-us/`) is automatically stripped from learn.microsoft.com paths
 - Training URLs (`training/paths/` or `training/modules/`) always route to the existing Learn flow
 
 ### Git LFS Support
-- Some repos (notably `microsoft/vscode-docs`) use Git LFS for images
+- Some repos (notably [`microsoft/vscode-docs`](https://github.com/microsoft/vscode-docs)) use Git LFS for images
 - `GitHubRawClient.DownloadFileAsync(DocsRepoInfo, ...)` detects LFS pointer files (starts with `version https://git-lfs.github.com/spec/v1`)
 - When detected, parses the OID (sha256) and size from the pointer, then uses the **Git LFS Batch API** (`POST https://github.com/{owner}/{repo}.git/info/lfs/objects/batch`) to obtain the actual download URL
 - **IMPORTANT**: The LFS Batch API must be called **without** the `Authorization: Bearer` header used for the GitHub API — a separate `HttpClient` (`_lfsHttp`) is used for this purpose. Sending a Bearer token causes 403 Forbidden on public repos
@@ -67,7 +67,8 @@
 ### Known Structural Exceptions in the MicrosoftDocs/learn Repo
 - **UID ≠ directory name**: `learn.github.copilot-spaces` → `introduction-copilot-spaces`, `learn.github-copilot-with-javascript` → `introduction-copilot-javascript`
 - **Parent dir ≠ uid prefix**: `learn.wwl.*` → `learn-pr/wwl-azure/` (not `wwl/`); modules without provider (e.g., `learn.advanced-github-copilot`) may live in `learn-pr/github/`
-- **Cross-repo modules**: some learning paths reference modules from private repos (e.g., `learn-bizapps.*` → `MicrosoftDocs/learn-bizapps-pr`, which is not publicly accessible). `ContentDownloader.DownloadModuleByUidSafeAsync` handles these by creating a placeholder module with a warning blockquote in the output document, plus a console warning. The module title is fetched from the Catalog API when possible
+- **Learning paths without index.yml in GitHub**: some paths (e.g., `learn.wwl.*` paths like `explore-microsoft-365-administration`, `explore-microsoft-365-copilot-agent-administration`) have no `learn-pr/paths/{slug}/index.yml` in the [`MicrosoftDocs/learn`](https://github.com/MicrosoftDocs/learn) repo. `ContentDownloader.DownloadPathAsync` detects this (via `TryDownloadStringAsync`) and falls back to `LearnCatalogClient.FindLearningPathBySlugAsync`, which iterates known UID prefixes (`learn.wwl.`, `learn.`, `learn.m365.`, `learn.azure.`, `learn.dotnet.`, `learn.github.`) to locate the path in the Catalog API and retrieve its module list
+- **Cross-repo modules**: some learning paths reference modules from private repos (e.g., `learn-bizapps.*` → [`MicrosoftDocs/learn-bizapps-pr`](https://github.com/MicrosoftDocs/learn-bizapps-pr), which is not publicly accessible). `ContentDownloader.DownloadModuleByUidSafeAsync` handles these by creating a placeholder module with a warning blockquote in the output document, plus a console warning. The module title is fetched from the Catalog API when possible
 - **Media dir naming**: most modules store images in `media/`, but some (e.g., `intro-to-azure-load-balancer`, `intro-to-azure-application-gateway`, `intro-to-azure-network-watcher`) use `images/` instead. `ContentDownloader.ProcessUnitAsync` tracks the original source directory from DFM `:::image source="../images/...":::` references via `mediaOrigins` dictionary, and `DownloadMediaAsync` uses this to download from the correct GitHub directory
 - **Numbered unit YAML files**: `1-introduction.yml`, `2-xxx.yml`; matched by slug in filename
 - **Knowledge check units**: `quiz:` field appears as a root-level YAML key (not inside `content: |`) — handled via `Quiz` property in `UnitYaml`
@@ -86,8 +87,8 @@
 - `DocsUrlParser`: static class that parses all URL types → `LearnTrainingUrl | DocsSiteUrl`. Known mapping table + locale stripping
 - `DocsDownloader`: downloads generic docs from GitHub repos recursively. Uses `toc.yml` for page ordering (including recursive sub-TOC resolution for nested `toc.yml` references) or `toc.json` from docs root (vscode-docs format: `[{name, area, topics}]` with nested sections). **Recursive area search** in `toc.json`: `ParseTocJsonSection` searches top-level sections first, then recursively traverses nested topic entries (`["", "", {name, area, topics}]`) to find the matching `area` — enabling sub-area downloads like `copilot/agents` from a single centralized `toc.json`. Handles image remapping, strips frontmatter/HTML blocks. Supports single-file path resolution (appends `.md`). Handles DocFX `~/` repo-root paths in both includes and image references. Converts reference-style image links (`![alt][ref]` + `[ref]: path`) to inline format to avoid duplicate reference IDs when merging multiple pages
 - `GitHubRawClient`: raw.githubusercontent.com for content + api.github.com/contents for directory listing. Supports both default `MicrosoftDocs/learn` repo and arbitrary repos via `DocsRepoInfo` overloads. LFS-aware downloads via Git LFS Batch API
-- `LearnCatalogClient`: `https://learn.microsoft.com/api/catalog/?uid=...&type=modules` — no authentication required
-- `ContentDownloader`: downloads Learn training content (paths + modules + units). Accepts `LearnCatalogClient` for Catalog API lookups. Handles unresolvable modules gracefully via `DownloadModuleByUidSafeAsync` (placeholder with warning in document)
+- `LearnCatalogClient`: `https://learn.microsoft.com/api/catalog/?uid=...&type=modules` — no authentication required. `FindLearningPathBySlugAsync` tries known UID prefixes to resolve paths that have no `index.yml` in the GitHub repo
+- `ContentDownloader`: downloads Learn training content (paths + modules + units). Accepts `LearnCatalogClient` for Catalog API lookups. `DownloadPathAsync` tries `learn-pr/paths/{slug}/index.yml` first, then falls back to `LearnCatalogClient.FindLearningPathBySlugAsync` if not found. Handles unresolvable modules gracefully via `DownloadModuleByUidSafeAsync` (placeholder with warning in document)
 - `ModuleResolver`: heuristic parent dir (from uid prefix) + fallback full scan of learn-pr/
 - `DfmConverter`: regex-based, converts :::image:::, [!NOTE], [!div], :::zone:::, [!VIDEO], :::code:::, etc. Also runs `EnsureBlankLineBeforeLists` to inject a blank line before any list block that immediately follows a paragraph (prevents pandoc from rendering bullets as inline text). Also runs `EnsureBlankLinesAroundHorizontalRules` to ensure pandoc correctly treats `---` as horizontal rules (not YAML or setext headings). Zone pivot markers are stripped with or without trailing `:::` (both `:::zone pivot="...":::` and `::: zone pivot="..."` formats supported, matching azure-docs conventions)
 - `MarkdownMerger`: YAML frontmatter generation + CC BY 4.0 attribution + download summary section. Two merge modes:
@@ -116,7 +117,7 @@
 - YAML frontmatter (`title`, `date`, `keywords`, `subject`, `description`) renders as pandoc title block (Word cover page + document properties)
 
 ### Content License
-- Source repo `MicrosoftDocs/learn` is licensed under **CC BY 4.0** — confirmed from `https://raw.githubusercontent.com/MicrosoftDocs/learn/main/LICENSE`
+- Source repo [`MicrosoftDocs/learn`](https://github.com/MicrosoftDocs/learn) is licensed under **CC BY 4.0** — confirmed from `https://raw.githubusercontent.com/MicrosoftDocs/learn/main/LICENSE`
 - Every generated document must include attribution per CC BY 4.0 §3(a): creator ID, copyright notice, license URI, and source URI
 - Attribution is injected by `MarkdownMerger.Merge()` in two places:
   1. YAML frontmatter fields (`author`, `subject`, `description`) → embedded in Word document properties

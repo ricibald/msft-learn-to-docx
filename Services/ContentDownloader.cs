@@ -35,23 +35,40 @@ public sealed class ContentDownloader
     {
         Console.WriteLine($"Downloading learning path: {pathSlug}");
 
-        // Download path index.yml
-        var pathYamlStr = await _github.DownloadStringAsync($"learn-pr/paths/{pathSlug}/index.yml");
-        var pathYaml = _yaml.Deserialize<LearningPathYaml>(pathYamlStr);
+        // Try GitHub repo first; some paths (e.g., learn.wwl.*) have no index.yml there
+        // and must be resolved via the Catalog API.
+        var pathYamlStr = await _github.TryDownloadStringAsync($"learn-pr/paths/{pathSlug}/index.yml");
 
-        Console.WriteLine($"  Title: {pathYaml.Title}");
-        Console.WriteLine($"  Modules: {pathYaml.Modules.Count}");
+        string pathTitle;
+        List<string> pathModules;
+
+        if (pathYamlStr is not null)
+        {
+            var pathYaml = _yaml.Deserialize<LearningPathYaml>(pathYamlStr);
+            pathTitle = pathYaml.Title;
+            pathModules = pathYaml.Modules;
+        }
+        else
+        {
+            Console.WriteLine($"  index.yml not found in GitHub repo, resolving via Catalog API...");
+            var catalogPath = await _catalog.FindLearningPathBySlugAsync(pathSlug);
+            pathTitle = catalogPath.Title;
+            pathModules = catalogPath.Modules;
+        }
+
+        Console.WriteLine($"  Title: {pathTitle}");
+        Console.WriteLine($"  Modules: {pathModules.Count}");
 
         var content = new DownloadedContent
         {
-            Title = pathYaml.Title,
+            Title = pathTitle,
             IsPath = true
         };
 
-        for (var i = 0; i < pathYaml.Modules.Count; i++)
+        for (var i = 0; i < pathModules.Count; i++)
         {
-            var moduleUid = pathYaml.Modules[i];
-            Console.WriteLine($"\n[{i + 1}/{pathYaml.Modules.Count}] Module: {moduleUid}");
+            var moduleUid = pathModules[i];
+            Console.WriteLine($"\n[{i + 1}/{pathModules.Count}] Module: {moduleUid}");
 
             var module = await DownloadModuleByUidSafeAsync(moduleUid, outputDir, i + 1);
             content.Modules.Add(module);
