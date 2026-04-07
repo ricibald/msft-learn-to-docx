@@ -104,7 +104,7 @@ public sealed class ContentDownloader
             IsPath = false
         };
 
-        var module = await DownloadModuleInternalAsync(moduleYaml, modulePath, outputDir, 1);
+        var module = await DownloadModuleInternalAsync(moduleYaml, modulePath, outputDir, 1, altRepo: null);
         content.Modules.Add(module);
 
         return content;
@@ -114,11 +114,11 @@ public sealed class ContentDownloader
     {
         try
         {
-            var modulePath = await _resolver.ResolveModulePathAsync(moduleUid);
-            var moduleYamlStr = await _github.DownloadStringAsync($"{modulePath}/index.yml");
+            var (modulePath, altRepo) = await _resolver.ResolveModulePathAsync(moduleUid);
+            var moduleYamlStr = await DownloadStringAsync(altRepo, $"{modulePath}/index.yml");
             var moduleYaml = _yaml.Deserialize<ModuleYaml>(moduleYamlStr);
 
-            return await DownloadModuleInternalAsync(moduleYaml, modulePath, outputDir, moduleIndex);
+            return await DownloadModuleInternalAsync(moduleYaml, modulePath, outputDir, moduleIndex, altRepo);
         }
         catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException)
         {
@@ -176,7 +176,8 @@ public sealed class ContentDownloader
     }
 
     private async Task<DownloadedModule> DownloadModuleInternalAsync(
-        ModuleYaml moduleYaml, string modulePath, string outputDir, int moduleIndex)
+        ModuleYaml moduleYaml, string modulePath, string outputDir, int moduleIndex,
+        DocsRepoInfo? altRepo)
     {
         Console.WriteLine($"  Module title: {moduleYaml.Title}");
         Console.WriteLine($"  Units: {moduleYaml.Units.Count}");
@@ -191,7 +192,7 @@ public sealed class ContentDownloader
         var mediaOrigins = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         // List unit YAML files in the module directory
-        var unitFiles = await GetUnitFilesAsync(modulePath);
+        var unitFiles = await GetUnitFilesAsync(modulePath, altRepo);
 
         // Download each unit
         for (var i = 0; i < moduleYaml.Units.Count; i++)
@@ -209,10 +210,10 @@ public sealed class ContentDownloader
 
             Console.Write($"    [{i + 1}/{moduleYaml.Units.Count}] {unitSlug}...");
 
-            var unitYamlStr = await _github.DownloadStringAsync($"{modulePath}/{unitFileName}");
+            var unitYamlStr = await DownloadStringAsync(altRepo, $"{modulePath}/{unitFileName}");
             var unitYaml = _yaml.Deserialize<UnitYaml>(unitYamlStr);
 
-            var downloadedUnit = await ProcessUnitAsync(unitYaml, modulePath, moduleIndex, mediaOrigins);
+            var downloadedUnit = await ProcessUnitAsync(unitYaml, modulePath, moduleIndex, mediaOrigins, altRepo);
             if (downloadedUnit is not null)
             {
                 downloadedModule.Units.Add(downloadedUnit);
@@ -225,14 +226,14 @@ public sealed class ContentDownloader
         }
 
         // Download media files
-        await DownloadMediaAsync(modulePath, outputDir, moduleIndex, downloadedModule, mediaOrigins);
+        await DownloadMediaAsync(modulePath, outputDir, moduleIndex, downloadedModule, mediaOrigins, altRepo);
 
         return downloadedModule;
     }
 
     private async Task<DownloadedUnit?> ProcessUnitAsync(
         UnitYaml unitYaml, string modulePath, int moduleIndex,
-        Dictionary<string, string> mediaOrigins)
+        Dictionary<string, string> mediaOrigins, DocsRepoInfo? altRepo)
     {
         var content = unitYaml.Content?.Trim() ?? "";
 
@@ -258,10 +259,10 @@ public sealed class ContentDownloader
         {
             var includePath = includeMatch.Groups[1].Value;
             var fullPath = $"{modulePath}/{includePath}";
-            var markdown = await _github.DownloadStringAsync(fullPath);
+            var markdown = await DownloadStringAsync(altRepo, fullPath);
 
             // Download :::code source files referenced in the markdown
-            var codeContents = await DownloadCodeSourcesAsync(markdown, modulePath, includePath);
+            var codeContents = await DownloadCodeSourcesAsync(markdown, modulePath, includePath, altRepo);
 
             // Convert DFM to standard markdown
             var converted = _dfmConverter.Convert(markdown,
@@ -318,7 +319,7 @@ public sealed class ContentDownloader
 
     private async Task DownloadMediaAsync(
         string modulePath, string outputDir, int moduleIndex, DownloadedModule module,
-        Dictionary<string, string> mediaOrigins)
+        Dictionary<string, string> mediaOrigins, DocsRepoInfo? altRepo)
     {
         // Collect all media paths from all units
         var mediaPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -350,13 +351,13 @@ public sealed class ContentDownloader
 
             var sourceDir = mediaOrigins.GetValueOrDefault(localFileName, "media");
             var githubMediaPath = $"{modulePath}/{sourceDir}/{originalFileName}";
-            await _github.DownloadFileAsync(githubMediaPath, localPath);
+            await DownloadFileAsync(altRepo, githubMediaPath, localPath);
         }
     }
 
-    private async Task<List<string>> GetUnitFilesAsync(string modulePath)
+    private async Task<List<string>> GetUnitFilesAsync(string modulePath, DocsRepoInfo? altRepo)
     {
-        var items = await _github.ListDirectoryAsync(modulePath);
+        var items = await ListDirectoryAsync(altRepo, modulePath);
         return items
             .Where(i => i.Type == "file"
                 && i.Name.EndsWith(".yml", StringComparison.OrdinalIgnoreCase)
@@ -400,12 +401,27 @@ public sealed class ContentDownloader
         return $"media/M{moduleIndex}_{fileName}";
     }
 
+    // ---- Repo-routing helpers ----
+    // Route calls to the default MicrosoftDocs/learn endpoints or to an alternate repo.
+
+    private Task<string?> TryDownloadStringAsync(DocsRepoInfo? repo, string path) =>
+        repo is null ? _github.TryDownloadStringAsync(path) : _github.TryDownloadStringAsync(repo, path);
+
+    private Task<string> DownloadStringAsync(DocsRepoInfo? repo, string path) =>
+        repo is null ? _github.DownloadStringAsync(path) : _github.DownloadStringAsync(repo, path);
+
+    private Task DownloadFileAsync(DocsRepoInfo? repo, string path, string localPath) =>
+        repo is null ? _github.DownloadFileAsync(path, localPath) : _github.DownloadFileAsync(repo, path, localPath);
+
+    private Task<List<GitHubContentItem>> ListDirectoryAsync(DocsRepoInfo? repo, string path) =>
+        repo is null ? _github.ListDirectoryAsync(path) : _github.ListDirectoryAsync(repo, path);
+
     /// <summary>
     /// Downloads all :::code source="..."::: referenced files from GitHub.
     /// Returns a dictionary: source path → file content.
     /// </summary>
     private async Task<Dictionary<string, string>?> DownloadCodeSourcesAsync(
-        string markdown, string modulePath, string includeRelPath)
+        string markdown, string modulePath, string includeRelPath, DocsRepoInfo? altRepo)
     {
         var codeRefs = DfmConverter.ExtractCodeSourcePaths(markdown);
         if (codeRefs.Count == 0) return null;
@@ -420,7 +436,7 @@ public sealed class ContentDownloader
 
             // Resolve relative path from the includes/ directory
             var resolvedPath = ResolveRelativePath($"{modulePath}/{includeDir}", source);
-            var content = await _github.TryDownloadStringAsync(resolvedPath);
+            var content = await TryDownloadStringAsync(altRepo, resolvedPath);
             if (content is not null)
             {
                 codeContents[source] = content;
