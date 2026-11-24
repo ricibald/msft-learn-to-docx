@@ -81,7 +81,7 @@ Output is written to `./output/{slug}_{timestamp}/` on the host.
 
 Multiple URL types can be mixed in a single command — all content is merged into one document.
 
-Course URLs export the self-paced modules listed in the course study guide, not instructor-led materials. If a module's source is unavailable, the document lists it with a link to Microsoft Learn.
+Course URLs preserve the study guide hierarchy: learning paths are chapters, modules are subsections, and units sit under their module. The default Word table of contents includes paths and modules; use `--toc-depth 3` to include offline unit headings. If a module's GitHub source is unavailable, the export lists its unit titles from the catalog and links to the module on Microsoft Learn; those units are not downloaded. Instructor-led materials are not exported.
 
 ---
 

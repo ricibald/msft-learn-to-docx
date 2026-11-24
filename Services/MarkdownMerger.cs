@@ -6,14 +6,13 @@ namespace MsftLearnToDocx.Services;
 
 /// <summary>
 /// Merges downloaded units into a single markdown document.
-/// Heading hierarchy: Module = H1, Unit = H2, content headings = H3+.
+/// Course learning paths add a heading level above their modules.
 /// </summary>
 public sealed partial class MarkdownMerger
 {
     /// <summary>
     /// Merges multiple <see cref="DownloadedContent"/> blocks into a single markdown string
     /// with YAML frontmatter (title, date, author, attribution metadata) for Word cover page.
-    /// Heading hierarchy: Module = H1, Unit = H2, content headings = H3+.
     /// </summary>
     /// <param name="sourceUrls">Original learn.microsoft.com URLs — included in the CC BY 4.0 attribution.</param>
     public string Merge(IReadOnlyList<DownloadedContent> contents, string? documentTitle = null, DateTime? date = null, IReadOnlyList<string>? sourceUrls = null)
@@ -109,6 +108,9 @@ public sealed partial class MarkdownMerger
         sb.AppendLine();
         sb.AppendLine($"- **{allModules.Count - unavailableModules.Count}/{allModules.Count}** modules downloaded");
         sb.AppendLine($"- **{allUnits.Count}** units processed");
+        var onlineUnits = unavailableModules.Sum(m => m.OnlineUnitTitles.Count);
+        if (onlineUnits > 0)
+            sb.AppendLine($"- **{onlineUnits}** units indexed (online only)");
         if (totalQuizzes > 0)
             sb.AppendLine($"- **{totalQuizzes}** knowledge checks");
         if (totalImages > 0)
@@ -162,30 +164,22 @@ public sealed partial class MarkdownMerger
                     }
                 }
             }
+            else if (content.CourseSections.Count > 0)
+            {
+                foreach (var section in content.CourseSections)
+                {
+                    if (section.LearningPathTitle is { } pathTitle)
+                    {
+                        sb.AppendLine($"# {pathTitle}");
+                        sb.AppendLine();
+                    }
+
+                    AppendTrainingModules(sb, section.Modules, section.LearningPathTitle is null ? 1 : 2);
+                }
+            }
             else
             {
-                // Learn training mode: Module = H1, Unit = H2, content = H3+
-                foreach (var module in content.Modules)
-                {
-                    // Module title = H1
-                    sb.AppendLine($"# {module.Title}");
-                    sb.AppendLine();
-
-                    foreach (var unit in module.Units)
-                    {
-                        // Unit title = H2
-                        sb.AppendLine($"## {unit.Title}");
-                        sb.AppendLine();
-
-                        if (!string.IsNullOrWhiteSpace(unit.MarkdownContent))
-                        {
-                            // Shift content headings so minimum becomes H3
-                            var adjustedContent = AdjustHeadingLevels(unit.MarkdownContent, 3);
-                            sb.AppendLine(adjustedContent.Trim());
-                            sb.AppendLine();
-                        }
-                    }
-                }
+                AppendTrainingModules(sb, content.Modules, 1);
             }
         }
 
@@ -196,6 +190,35 @@ public sealed partial class MarkdownMerger
             result = trimmedEnd[..^3].TrimEnd() + "\n";
 
         return result;
+    }
+
+    private static void AppendTrainingModules(StringBuilder sb, IReadOnlyList<DownloadedModule> modules, int moduleLevel)
+    {
+        var moduleHeading = new string('#', moduleLevel);
+        foreach (var module in modules)
+        {
+            sb.AppendLine($"{moduleHeading} {module.Title}");
+            sb.AppendLine();
+            foreach (var unit in module.Units)
+            {
+                sb.AppendLine($"{moduleHeading}# {unit.Title}");
+                sb.AppendLine();
+                if (!string.IsNullOrWhiteSpace(unit.MarkdownContent))
+                {
+                    sb.AppendLine(AdjustHeadingLevels(unit.MarkdownContent, moduleLevel + 2).Trim());
+                    sb.AppendLine();
+                }
+            }
+
+            if (module.OnlineUnitTitles.Count > 0)
+            {
+                sb.AppendLine("Units listed in Microsoft Learn (online only):");
+                sb.AppendLine();
+                foreach (var title in module.OnlineUnitTitles)
+                    sb.AppendLine($"- {title}");
+                sb.AppendLine();
+            }
+        }
     }
 
     /// <summary>

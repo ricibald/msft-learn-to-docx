@@ -10,6 +10,7 @@ namespace MsftLearnToDocx.Services;
 public sealed class LearnCatalogClient
 {
     private const string BaseUrl = "https://learn.microsoft.com/api/catalog/";
+    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
     private readonly HttpClient _http;
 
@@ -23,10 +24,7 @@ public sealed class LearnCatalogClient
         var uid = $"course.{courseSlug.ToLowerInvariant()}";
         var url = $"{BaseUrl}?uid={Uri.EscapeDataString(uid)}&type=courses";
         var json = await _http.GetStringAsync(url);
-        var response = JsonSerializer.Deserialize<CatalogCourseResponse>(json, new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true
-        });
+        var response = JsonSerializer.Deserialize<CatalogCourseResponse>(json, JsonOptions);
 
         return response?.Courses?.FirstOrDefault(c => string.Equals(c.Uid, uid, StringComparison.OrdinalIgnoreCase))
             ?? throw new InvalidOperationException($"Course not found in Learn Catalog: {uid}");
@@ -41,15 +39,19 @@ public sealed class LearnCatalogClient
         var url = $"{BaseUrl}?uid={Uri.EscapeDataString(uid)}&type=modules";
         var json = await _http.GetStringAsync(url);
 
-        var response = JsonSerializer.Deserialize<CatalogModuleResponse>(json, new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true
-        });
+        var response = JsonSerializer.Deserialize<CatalogModuleResponse>(json, JsonOptions);
 
         if (response?.Modules is not { Count: > 0 })
             throw new InvalidOperationException($"Module not found in Learn Catalog: {uid}");
 
         return response.Modules[0];
+    }
+
+    public async Task<IReadOnlyList<CatalogUnit>> GetUnitsAsync(IReadOnlyList<string> uids)
+    {
+        var query = string.Join(",", uids.Select(Uri.EscapeDataString));
+        var json = await _http.GetStringAsync($"{BaseUrl}?uid={query}&type=units");
+        return JsonSerializer.Deserialize<CatalogUnitResponse>(json, JsonOptions)?.Units ?? [];
     }
 
     /// <summary>
@@ -60,10 +62,7 @@ public sealed class LearnCatalogClient
         var url = $"{BaseUrl}?uid={Uri.EscapeDataString(uid)}&type=learningPaths";
         var json = await _http.GetStringAsync(url);
 
-        var response = JsonSerializer.Deserialize<CatalogLearningPathResponse>(json, new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true
-        });
+        var response = JsonSerializer.Deserialize<CatalogLearningPathResponse>(json, JsonOptions);
 
         if (response?.LearningPaths is not { Count: > 0 })
             throw new InvalidOperationException($"Learning path not found in Learn Catalog: {uid}");
@@ -90,14 +89,12 @@ public sealed class LearnCatalogClient
     /// </summary>
     public async Task<CatalogLearningPath> FindLearningPathBySlugAsync(string pathSlug)
     {
-        var jsonOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-
         foreach (var prefix in LearningPathUidPrefixes)
         {
             var uid = $"{prefix}{pathSlug}";
             var url = $"{BaseUrl}?uid={Uri.EscapeDataString(uid)}&type=learningPaths";
             var json = await _http.GetStringAsync(url);
-            var response = JsonSerializer.Deserialize<CatalogLearningPathResponse>(json, jsonOptions);
+            var response = JsonSerializer.Deserialize<CatalogLearningPathResponse>(json, JsonOptions);
             if (response?.LearningPaths is { Count: > 0 })
             {
                 Console.WriteLine($"  Resolved path UID: {uid}");

@@ -181,17 +181,13 @@ static (HttpClient Client, string CacheDir) CreateHttpClient()
             localAppData = "/tmp";
         cacheDir = Path.Combine(localAppData, "MsftLearnToDocx", "cache");
     }
-    var handler = new CachingHandler(new RetryHandler(), cacheDir, TimeSpan.FromHours(24));
-
-    var client = new HttpClient(handler);
-    client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("MsftLearnToDocx", "1.0"));
-    client.Timeout = TimeSpan.FromSeconds(30);
+    HttpMessageHandler handler = new CachingHandler(new RetryHandler(), cacheDir, TimeSpan.FromHours(24));
 
     // Optional GitHub token for higher rate limits
     var githubToken = Environment.GetEnvironmentVariable("GITHUB_TOKEN");
     if (!string.IsNullOrWhiteSpace(githubToken))
     {
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", githubToken);
+        handler = new GitHubAuthorizationHandler(githubToken, handler);
         Console.WriteLine("Using GITHUB_TOKEN for authenticated requests.");
     }
     else
@@ -199,6 +195,9 @@ static (HttpClient Client, string CacheDir) CreateHttpClient()
         Console.WriteLine("No GITHUB_TOKEN set. Using unauthenticated requests (60 req/h rate limit for GitHub API).");
     }
 
+    var client = new HttpClient(handler);
+    client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("MsftLearnToDocx", "1.0"));
+    client.Timeout = TimeSpan.FromSeconds(30);
     return (client, cacheDir);
 }
 
@@ -262,4 +261,14 @@ static void PrintUsage()
           # Mix training + docs in one document
           MsftLearnToDocx "https://learn.microsoft.com/.../training/paths/copilot/" "https://code.visualstudio.com/docs/copilot/" --title "Copilot Guide"
         """);
+}
+
+sealed class GitHubAuthorizationHandler(string token, HttpMessageHandler innerHandler) : DelegatingHandler(innerHandler)
+{
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        if (request.RequestUri is { Scheme: "https", Host: "api.github.com" or "raw.githubusercontent.com" })
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        return base.SendAsync(request, cancellationToken);
+    }
 }

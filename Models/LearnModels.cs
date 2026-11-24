@@ -208,6 +208,17 @@ public class CatalogModule
     public List<string> Units { get; set; } = [];
 }
 
+public class CatalogUnitResponse
+{
+    public List<CatalogUnit> Units { get; set; } = [];
+}
+
+public class CatalogUnit
+{
+    public string Uid { get; set; } = "";
+    public string Title { get; set; } = "";
+}
+
 public class CatalogLearningPathResponse
 {
     public List<CatalogLearningPath> LearningPaths { get; set; } = [];
@@ -238,13 +249,17 @@ public class DownloadedContent
     public bool IsPath { get; set; }
     public ContentType Type { get; set; } = ContentType.LearnTraining;
     public List<DownloadedModule> Modules { get; set; } = [];
+    public List<DownloadedCourseSection> CourseSections { get; } = [];
 }
+
+public record DownloadedCourseSection(string? LearningPathTitle, IReadOnlyList<DownloadedModule> Modules);
 
 public class DownloadedModule
 {
     public string Title { get; set; } = "";
     public string Uid { get; set; } = "";
     public List<DownloadedUnit> Units { get; set; } = [];
+    public IReadOnlyList<string> OnlineUnitTitles { get; set; } = [];
 }
 
 public class DownloadedUnit

@@ -89,7 +89,7 @@ docker run --rm \
 --template path/to/ref.docx   Custom pandoc reference DOCX template
 --format md                   Generate Markdown only (no pandoc needed)
 --output, -o <dir>            Custom output directory
---toc-depth N                 Table of Contents depth (default: 3)
+--toc-depth N                 Table of Contents depth (default: 2)
 --help                        Show help
 ```
 
@@ -111,7 +111,7 @@ docker run --rm \
 | SQL Server docs | `https://learn.microsoft.com/en-us/sql/...` |
 | PowerShell docs | `https://learn.microsoft.com/en-us/powershell/...` |
 
-Course URLs use the Microsoft Learn Catalog to resolve the self-paced study guide. Modules without downloadable sources are listed with links to Microsoft Learn.
+Course URLs preserve the self-paced study guide hierarchy: learning paths, modules, and units. If a module's GitHub source is unavailable, the export lists its unit titles and links to the module on Microsoft Learn; the lessons remain online only.
 
 ## Content License & Legal Notice
 

@@ -7,7 +7,7 @@ namespace MsftLearnToDocx.Tests;
 public class ContentDownloaderTests
 {
     [Fact]
-    public async Task DownloadCourseAsync_ExportsStudyGuideInOrderWithUnavailableModuleLinks()
+    public async Task DownloadCourseAsync_ExportsPathHierarchyAndOnlineUnitIndexInOrder()
     {
         const string moduleUrl = "https://learn.microsoft.com/en-us/training/modules/renamed-module/";
         using var http = new HttpClient(new StubHandler(new Dictionary<string, string>
@@ -16,19 +16,29 @@ public class ContentDownloaderTests
                 {"courses":[{"uid":"course.ab-731t00","title":"Sample course","study_guide":[
                     {"type":"learningPath","uid":"learn.wwl.sample-path"},
                     {"type":"module","uid":"learn.wwl.original-module"},
+                    {"type":"learningPath","uid":"learn.wwl.second-path"},
                     {"type":"module","uid":"learn.wwl.direct-module"}
                 ]}]}
                 """,
             ["https://learn.microsoft.com/api/catalog/?uid=learn.wwl.sample-path&type=learningPaths"] = """
-                {"learningPaths":[{"uid":"learn.wwl.sample-path","modules":["learn.github.public-module","learn.wwl.original-module"]}]}
+                {"learningPaths":[{"title":"First path","modules":["learn.github.public-module","learn.wwl.original-module"]}]}
+                """,
+            ["https://learn.microsoft.com/api/catalog/?uid=learn.wwl.second-path&type=learningPaths"] = """
+                {"learningPaths":[{"title":"Second path","modules":["learn.github.public-module"]}]}
                 """,
             ["https://learn.microsoft.com/api/catalog/?uid=learn.github.public-module&type=modules"] = """
                 {"modules":[{"url":"https://learn.microsoft.com/en-us/training/modules/public-module/"}]}
                 """,
             ["https://learn.microsoft.com/api/catalog/?uid=learn.wwl.original-module&type=modules"] =
-                $$"""{"modules":[{"title":"Renamed module","url":"{{moduleUrl}}"}]}""",
+                $$"""{"modules":[{"title":"Renamed module","url":"{{moduleUrl}}","units":["learn.wwl.original-module.intro","learn.wwl.original-module.summary"]}]}""",
+            ["https://learn.microsoft.com/api/catalog/?uid=learn.wwl.original-module.intro,learn.wwl.original-module.summary&type=units"] = """
+                {"units":[
+                    {"uid":"learn.wwl.original-module.summary","title":"Online summary"},
+                    {"uid":"learn.wwl.original-module.intro","title":"Online introduction"}
+                ]}
+                """,
             ["https://learn.microsoft.com/api/catalog/?uid=learn.wwl.direct-module&type=modules"] = """
-                {"modules":[{"title":"Direct module","url":"https://learn.microsoft.com/en-us/training/modules/direct-module/"}]}
+                {"modules":[{"title":"Direct module","url":"https://learn.microsoft.com/en-us/training/modules/direct-module/","units":["learn.wwl.direct-module.intro"]}]}
                 """,
             ["https://raw.githubusercontent.com/MicrosoftDocs/learn/main/learn-pr/github/public-module/index.yml"] = """
                 uid: learn.github.public-module
@@ -40,7 +50,9 @@ public class ContentDownloaderTests
             ["https://raw.githubusercontent.com/MicrosoftDocs/learn/main/learn-pr/github/public-module/1-introduction.yml"] = """
                 uid: learn.github.public-module.introduction
                 title: Introduction
-                content: Sample lesson text.
+                content: |
+                  ## Lesson details
+                  Sample lesson text.
                 """,
             ["https://api.github.com/repos/MicrosoftDocs/learn/contents/learn-pr"] = "[]",
         }));
@@ -51,8 +63,18 @@ public class ContentDownloaderTests
         Assert.Equal("Sample course", content.Title);
         Assert.Equal(new[] { "learn.github.public-module", "learn.wwl.original-module", "learn.wwl.direct-module" },
             content.Modules.Select(m => m.Uid));
+        var lines = markdown.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        Assert.Equal(
+            ["# First path", "## Public module", "## Renamed module", "# Second path", "## Public module", "# Direct module", "## Content Unavailable"],
+            lines.Where(line => line.StartsWith("# ") || line.StartsWith("## "))
+                .Where(line => line is not ("# Attribution" or "# Download Summary")));
+        Assert.Contains("### Introduction", lines);
+        Assert.Contains("#### Lesson details", lines);
         Assert.Contains("Sample lesson text.", markdown);
         Assert.Contains($"<{moduleUrl}>", markdown);
+        Assert.Contains("<https://learn.microsoft.com/en-us/training/modules/direct-module/>", markdown);
+        Assert.Equal(["- Online introduction", "- Online summary"], lines.Where(line => line.StartsWith("- Online ")));
+        Assert.Contains("**2** units indexed (online only)", markdown);
         Assert.Contains("**1/3** modules downloaded", markdown);
     }
 

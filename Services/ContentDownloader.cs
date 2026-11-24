@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using MsftLearnToDocx.Models;
 using YamlDotNet.Serialization;
@@ -62,8 +63,9 @@ public sealed class ContentDownloader
     public async Task<DownloadedContent> DownloadCourseAsync(string courseSlug, string outputDir)
     {
         var course = await _catalog.GetCourseAsync(courseSlug);
-        var moduleUids = new List<string>();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var sections = new List<(string? PathTitle, IReadOnlyList<string> ModuleUids)>();
+        var modulesInPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var directModules = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var entry in course.StudyGuide ?? [])
         {
@@ -76,12 +78,14 @@ public sealed class ContentDownloader
             if (string.Equals(entry.Type, "learningPath", StringComparison.OrdinalIgnoreCase))
             {
                 var path = await _catalog.GetLearningPathAsync(entry.Uid);
-                moduleUids.AddRange(path.Modules.Where(seen.Add));
+                var pathModules = path.Modules.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+                sections.Add((string.IsNullOrWhiteSpace(path.Title) ? entry.Uid : path.Title, pathModules));
+                modulesInPaths.UnionWith(pathModules);
             }
             else if (string.Equals(entry.Type, "module", StringComparison.OrdinalIgnoreCase))
             {
-                if (seen.Add(entry.Uid))
-                    moduleUids.Add(entry.Uid);
+                if (directModules.Add(entry.Uid))
+                    sections.Add((null, [entry.Uid]));
             }
             else
             {
@@ -89,14 +93,24 @@ public sealed class ContentDownloader
             }
         }
 
-        if (moduleUids.Count == 0)
+        // A module can belong to multiple paths, but a redundant standalone entry adds no context.
+        sections.RemoveAll(s => s.PathTitle is null && modulesInPaths.Contains(s.ModuleUids[0]));
+        var moduleUids = sections.SelectMany(s => s.ModuleUids)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if (moduleUids.Length == 0)
             throw new InvalidOperationException($"No self-paced training modules found in the study guide for course '{courseSlug}'.");
 
-        return await DownloadTrainingGroupAsync(course.Title, moduleUids, outputDir);
+        var content = await DownloadTrainingGroupAsync(course.Title, moduleUids, outputDir, indexOnlineUnits: true);
+        var modulesByUid = moduleUids.Zip(content.Modules)
+            .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.OrdinalIgnoreCase);
+        foreach (var (pathTitle, sectionUids) in sections)
+            content.CourseSections.Add(new DownloadedCourseSection(pathTitle, sectionUids.Select(uid => modulesByUid[uid]).ToArray()));
+
+        return content;
     }
 
     private async Task<DownloadedContent> DownloadTrainingGroupAsync(
-        string title, IReadOnlyList<string> moduleUids, string outputDir)
+        string title, IReadOnlyList<string> moduleUids, string outputDir, bool indexOnlineUnits = false)
     {
         Console.WriteLine($"  Title: {title}");
         Console.WriteLine($"  Modules: {moduleUids.Count}");
@@ -112,7 +126,7 @@ public sealed class ContentDownloader
             var moduleUid = moduleUids[i];
             Console.WriteLine($"\n[{i + 1}/{moduleUids.Count}] Module: {moduleUid}");
 
-            var module = await DownloadModuleByUidSafeAsync(moduleUid, outputDir, i + 1);
+            var module = await DownloadModuleByUidSafeAsync(moduleUid, outputDir, i + 1, indexOnlineUnits);
             content.Modules.Add(module);
         }
 
@@ -152,7 +166,8 @@ public sealed class ContentDownloader
         return content;
     }
 
-    private async Task<DownloadedModule> DownloadModuleByUidSafeAsync(string moduleUid, string outputDir, int moduleIndex)
+    private async Task<DownloadedModule> DownloadModuleByUidSafeAsync(
+        string moduleUid, string outputDir, int moduleIndex, bool indexOnlineUnits)
     {
         try
         {
@@ -165,9 +180,18 @@ public sealed class ContentDownloader
         catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException)
         {
             Console.WriteLine($"\n  [WARN] Cannot download module '{moduleUid}': {ex.Message}");
-            Console.WriteLine($"  [WARN] The module will appear as a placeholder in the output document.");
+            Console.WriteLine("  [WARN] The module will be marked as online only in the output document.");
 
-            var (title, learnUrl) = await GetModuleReferenceAsync(moduleUid);
+            var catalogModule = await TryGetModuleReferenceAsync(moduleUid);
+            var slug = moduleUid.Split('.')[^1];
+            var title = catalogModule?.Title
+                ?? System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(slug.Replace('-', ' '));
+            var learnUrl = string.IsNullOrEmpty(catalogModule?.Url)
+                ? $"https://learn.microsoft.com/training/modules/{slug}/"
+                : catalogModule.Url;
+            var onlineUnitTitles = indexOnlineUnits && catalogModule?.Units is { Count: > 0 } unitUids
+                ? await GetOnlineUnitTitlesAsync(moduleUid, unitUids)
+                : [];
 
             var reason = ex is HttpRequestException
                 ? "an HTTP error occurred while downloading its content from GitHub."
@@ -184,6 +208,7 @@ public sealed class ContentDownloader
             {
                 Title = title,
                 Uid = moduleUid,
+                OnlineUnitTitles = onlineUnitTitles,
                 Units =
                 [
                     new DownloadedUnit
@@ -197,20 +222,35 @@ public sealed class ContentDownloader
         }
     }
 
-    private async Task<(string Title, string Url)> GetModuleReferenceAsync(string moduleUid)
+    private async Task<CatalogModule?> TryGetModuleReferenceAsync(string moduleUid)
     {
-        var slug = moduleUid.Split('.')[^1];
-        var fallbackUrl = $"https://learn.microsoft.com/training/modules/{slug}/";
         try
         {
-            var catalogModule = await _catalog.GetModuleAsync(moduleUid);
-            return (catalogModule.Title, string.IsNullOrEmpty(catalogModule.Url) ? fallbackUrl : catalogModule.Url);
+            return await _catalog.GetModuleAsync(moduleUid);
         }
         catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException)
         {
             Console.WriteLine($"  [WARN] Cannot get module metadata for '{moduleUid}': {ex.Message}");
-            var title = System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(slug.Replace('-', ' '));
-            return (title, fallbackUrl);
+            return null;
+        }
+    }
+
+    private async Task<IReadOnlyList<string>> GetOnlineUnitTitlesAsync(string moduleUid, IReadOnlyList<string> unitUids)
+    {
+        try
+        {
+            var units = await _catalog.GetUnitsAsync(unitUids);
+            var titlesByUid = units.Where(u => !string.IsNullOrWhiteSpace(u.Title))
+                .ToLookup(u => u.Uid, u => u.Title, StringComparer.OrdinalIgnoreCase);
+            var titles = unitUids.Where(titlesByUid.Contains).Select(uid => titlesByUid[uid].First()).ToArray();
+            if (titles.Length != unitUids.Count)
+                Console.WriteLine($"  [WARN] Learn Catalog returned titles for only {titles.Length}/{unitUids.Count} units in '{moduleUid}'.");
+            return titles;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or JsonException or TaskCanceledException)
+        {
+            Console.WriteLine($"  [WARN] Cannot get unit titles for '{moduleUid}': {ex.Message}");
+            return [];
         }
     }
 
