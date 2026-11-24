@@ -9,7 +9,7 @@ namespace MsftLearnToDocx.Services;
 public abstract record ParsedUrl;
 
 /// <summary>
-/// URL pointing to a Microsoft Learn training path or module.
+/// URL pointing to a Microsoft Learn course, learning path or module.
 /// </summary>
 public record LearnTrainingUrl(string Type, string Slug) : ParsedUrl;
 
@@ -21,7 +21,7 @@ public record DocsSiteUrl(DocsRepoInfo RepoInfo) : ParsedUrl;
 /// <summary>
 /// Parses documentation URLs and maps them to GitHub repo coordinates.
 /// Supports:
-///   - learn.microsoft.com training paths/modules (existing flow)
+///   - learn.microsoft.com training courses/paths/modules
 ///   - code.visualstudio.com/docs/* → microsoft/vscode-docs
 ///   - learn.microsoft.com/{locale?}/{product}/* → auto-detected or known-mapped repos
 /// </summary>
@@ -64,25 +64,23 @@ public static partial class DocsUrlParser
     /// </summary>
     public static ParsedUrl Parse(string url)
     {
-        // Try Learn training URL first
-        var trainingMatch = TrainingUrlRegex().Match(url);
-        if (trainingMatch.Success)
-        {
-            return new LearnTrainingUrl(
-                trainingMatch.Groups[1].Value.ToLowerInvariant(),
-                trainingMatch.Groups[2].Value);
-        }
-
-        // Parse as URI
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
             throw new ArgumentException($"Invalid URL: {url}");
 
         var host = uri.Host.ToLowerInvariant();
         var path = uri.AbsolutePath.Trim('/');
 
-        // Strip locale from learn.microsoft.com paths (e.g., "en-us/azure/devops/...")
         if (host == "learn.microsoft.com")
+        {
             path = StripLocale(path);
+            var trainingMatch = TrainingUrlRegex().Match(path);
+            if (trainingMatch.Success)
+            {
+                return new LearnTrainingUrl(
+                    trainingMatch.Groups[1].Value.ToLowerInvariant(),
+                    trainingMatch.Groups[2].Value);
+            }
+        }
 
         // Try known mappings (longest prefix first — array is pre-sorted)
         foreach (var mapping in KnownMappings)
@@ -113,6 +111,7 @@ public static partial class DocsUrlParser
 
         throw new ArgumentException(
             $"Unrecognized URL format. Supported:\n" +
+            $"  - https://learn.microsoft.com/.../training/courses/{{slug}}\n" +
             $"  - https://learn.microsoft.com/.../training/paths/{{slug}}\n" +
             $"  - https://learn.microsoft.com/.../training/modules/{{slug}}\n" +
             $"  - https://code.visualstudio.com/docs/{{path}}\n" +
@@ -137,8 +136,7 @@ public static partial class DocsUrlParser
         return match.Success ? path[(match.Length)..].TrimStart('/') : path;
     }
 
-    // Matches training URLs: .../training/(paths|modules)/slug
-    [GeneratedRegex(@"(?:training/)?(paths|modules)/([^/?#]+)", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"^(?:training/)?(courses|paths|modules)/([^/]+)", RegexOptions.IgnoreCase)]
     private static partial Regex TrainingUrlRegex();
 
     // Matches locale prefix: en-us, fr-fr, zh-cn, etc.

@@ -123,6 +123,10 @@ foreach (var parsed in parsedUrls)
 {
     switch (parsed)
     {
+        case LearnTrainingUrl { Type: "courses" } training:
+            Console.WriteLine($"\n=== Downloading Learn course: {training.Slug} ===");
+            allContents.Add(await downloader.DownloadCourseAsync(training.Slug, outputDir));
+            break;
         case LearnTrainingUrl { Type: "paths" } training:
             Console.WriteLine($"\n=== Downloading Learn path: {training.Slug} ===");
             allContents.Add(await downloader.DownloadPathAsync(training.Slug, outputDir));
@@ -209,7 +213,8 @@ static void PrintUsage()
         Arguments:
           <url>    One or more URLs to download and merge. Supported sources:
 
-                   Learn training paths & modules:
+                   Learn training courses, paths & modules:
+                     https://learn.microsoft.com/en-us/training/courses/ab-731t00
                      https://learn.microsoft.com/en-us/training/paths/copilot/
                      https://learn.microsoft.com/en-us/training/modules/introduction-to-github-copilot/
 
@@ -224,7 +229,7 @@ static void PrintUsage()
 
         Options:
           --title <text>          Custom document title (used in cover page).
-                                  Default: auto-derived from the learning path/module title(s).
+                                  Default: auto-derived from the source title(s).
           --template, -t <path>   Path to a DOCX template file for pandoc --reference-doc.
                                   Default: Templates/template.docx (if exists).
           --output, -o <dir>      Output directory. Default: output/{slug}_{timestamp}/.

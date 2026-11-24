@@ -6,7 +6,7 @@ using YamlDotNet.Serialization.NamingConventions;
 namespace MsftLearnToDocx.Services;
 
 /// <summary>
-/// Downloads all content for a learning path or module from GitHub.
+/// Downloads modules and units for a Microsoft Learn course, learning path or module.
 /// </summary>
 public sealed class ContentDownloader
 {
@@ -56,19 +56,61 @@ public sealed class ContentDownloader
             pathModules = catalogPath.Modules;
         }
 
-        Console.WriteLine($"  Title: {pathTitle}");
-        Console.WriteLine($"  Modules: {pathModules.Count}");
+        return await DownloadTrainingGroupAsync(pathTitle, pathModules, outputDir);
+    }
+
+    public async Task<DownloadedContent> DownloadCourseAsync(string courseSlug, string outputDir)
+    {
+        var course = await _catalog.GetCourseAsync(courseSlug);
+        var moduleUids = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var entry in course.StudyGuide ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(entry.Uid))
+            {
+                Console.WriteLine($"  [WARN] Skipping study guide entry without a UID in course '{courseSlug}'.");
+                continue;
+            }
+
+            if (string.Equals(entry.Type, "learningPath", StringComparison.OrdinalIgnoreCase))
+            {
+                var path = await _catalog.GetLearningPathAsync(entry.Uid);
+                moduleUids.AddRange(path.Modules.Where(seen.Add));
+            }
+            else if (string.Equals(entry.Type, "module", StringComparison.OrdinalIgnoreCase))
+            {
+                if (seen.Add(entry.Uid))
+                    moduleUids.Add(entry.Uid);
+            }
+            else
+            {
+                Console.WriteLine($"  [WARN] Skipping unsupported study guide entry '{entry.Uid}' ({entry.Type}).");
+            }
+        }
+
+        if (moduleUids.Count == 0)
+            throw new InvalidOperationException($"No self-paced training modules found in the study guide for course '{courseSlug}'.");
+
+        return await DownloadTrainingGroupAsync(course.Title, moduleUids, outputDir);
+    }
+
+    private async Task<DownloadedContent> DownloadTrainingGroupAsync(
+        string title, IReadOnlyList<string> moduleUids, string outputDir)
+    {
+        Console.WriteLine($"  Title: {title}");
+        Console.WriteLine($"  Modules: {moduleUids.Count}");
 
         var content = new DownloadedContent
         {
-            Title = pathTitle,
+            Title = title,
             IsPath = true
         };
 
-        for (var i = 0; i < pathModules.Count; i++)
+        for (var i = 0; i < moduleUids.Count; i++)
         {
-            var moduleUid = pathModules[i];
-            Console.WriteLine($"\n[{i + 1}/{pathModules.Count}] Module: {moduleUid}");
+            var moduleUid = moduleUids[i];
+            Console.WriteLine($"\n[{i + 1}/{moduleUids.Count}] Module: {moduleUid}");
 
             var module = await DownloadModuleByUidSafeAsync(moduleUid, outputDir, i + 1);
             content.Modules.Add(module);
@@ -125,15 +167,11 @@ public sealed class ContentDownloader
             Console.WriteLine($"\n  [WARN] Cannot download module '{moduleUid}': {ex.Message}");
             Console.WriteLine($"  [WARN] The module will appear as a placeholder in the output document.");
 
-            // Try to get the real title from the Catalog API
-            var title = await GetModuleTitleFromCatalogAsync(moduleUid);
-
-            var uidParts = moduleUid.Split('.');
-            var learnUrl = $"https://learn.microsoft.com/training/modules/{uidParts[^1]}/";
+            var (title, learnUrl) = await GetModuleReferenceAsync(moduleUid);
 
             var reason = ex is HttpRequestException
                 ? "an HTTP error occurred while downloading its content from GitHub."
-                : "its source content is hosted in a private repository that is not publicly accessible.";
+                : "its source content could not be located in the configured GitHub repositories.";
 
             var warningContent =
                 $"> **⚠ Module not available for download**\n" +
@@ -159,19 +197,20 @@ public sealed class ContentDownloader
         }
     }
 
-    private async Task<string> GetModuleTitleFromCatalogAsync(string moduleUid)
+    private async Task<(string Title, string Url)> GetModuleReferenceAsync(string moduleUid)
     {
+        var slug = moduleUid.Split('.')[^1];
+        var fallbackUrl = $"https://learn.microsoft.com/training/modules/{slug}/";
         try
         {
             var catalogModule = await _catalog.GetModuleAsync(moduleUid);
-            return catalogModule.Title;
+            return (catalogModule.Title, string.IsNullOrEmpty(catalogModule.Url) ? fallbackUrl : catalogModule.Url);
         }
-        catch
+        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException)
         {
-            // Derive a readable title from the UID slug as last resort
-            var slugParts = moduleUid.Split('.');
-            return System.Globalization.CultureInfo.CurrentCulture.TextInfo
-                .ToTitleCase(slugParts[^1].Replace('-', ' '));
+            Console.WriteLine($"  [WARN] Cannot get module metadata for '{moduleUid}': {ex.Message}");
+            var title = System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(slug.Replace('-', ' '));
+            return (title, fallbackUrl);
         }
     }
 

@@ -7,7 +7,7 @@
 [![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-blue.svg)](#prerequisites)
 [![Actively Maintained](https://img.shields.io/badge/Actively%20Maintained-Yes-green.svg)](#)
 
-.NET 8 console app that converts Microsoft Learn training paths/modules, VS Code documentation, and Microsoft Docs sites into a unified Markdown document and a Word (DOCX) file via **pandoc**.
+.NET 8 console app that converts Microsoft Learn training courses, paths and modules, VS Code documentation, and Microsoft Docs sites into a unified Markdown document and a Word (DOCX) file via **pandoc**.
 
 > **Find learning paths**: browse all available Microsoft Learn paths at  
 > <https://learn.microsoft.com/en-us/training/browse/?resource_type=learning%20path>
@@ -67,6 +67,7 @@ Output is written to `./output/{slug}_{timestamp}/` on the host.
 
 | Source | Example URL | GitHub Repo |
 |--------|------------|-------------|
+| Learn training courses | `https://learn.microsoft.com/en-us/training/courses/ab-731t00` | Learn Catalog API for the syllabus; GitHub for module content |
 | Learn training paths | `https://learn.microsoft.com/.../training/paths/copilot/` | `MicrosoftDocs/learn` |
 | Learn training modules | `https://learn.microsoft.com/.../training/modules/intro-to-copilot/` | `MicrosoftDocs/learn` |
 | VS Code docs | `https://code.visualstudio.com/docs/copilot/` | `microsoft/vscode-docs` (LFS) |
@@ -79,6 +80,8 @@ Output is written to `./output/{slug}_{timestamp}/` on the host.
 | Windows docs | `https://learn.microsoft.com/.../windows/...` | `MicrosoftDocs/windows-dev-docs` |
 
 Multiple URL types can be mixed in a single command — all content is merged into one document.
+
+Course URLs export the self-paced modules listed in the course study guide, not instructor-led materials. If a module's source is unavailable, the document lists it with a link to Microsoft Learn.
 
 ---
 

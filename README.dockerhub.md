@@ -4,7 +4,7 @@
 [![Docker Image Size](https://img.shields.io/docker/image-size/ricibald/msft-learn-to-docx/latest)](https://hub.docker.com/r/ricibald/msft-learn-to-docx)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/ricibald/msft-learn-to-docx/blob/main/LICENSE)
 
-Convert Microsoft Learn training paths/modules **and** Microsoft documentation sites (VS Code docs, Azure DevOps, .NET, Azure, etc.) into Word (DOCX) or Markdown — no local install of .NET or pandoc required.
+Convert Microsoft Learn training courses, paths and modules **and** Microsoft documentation sites (VS Code docs, Azure DevOps, .NET, Azure, etc.) into Word (DOCX) or Markdown — no local install of .NET or pandoc required.
 
 > **Find learning paths**: <https://learn.microsoft.com/en-us/training/browse/?resource_type=learning%20path>
 
@@ -101,6 +101,7 @@ docker run --rm \
 
 | Source | Example URL |
 | --- | --- |
+| Learn training courses | `https://learn.microsoft.com/en-us/training/courses/ab-731t00` |
 | Learn training paths | `https://learn.microsoft.com/en-us/training/paths/copilot/` |
 | Learn training modules | `https://learn.microsoft.com/en-us/training/modules/introduction-to-github-copilot/` |
 | VS Code docs | `https://code.visualstudio.com/docs/copilot/` |
@@ -109,6 +110,8 @@ docker run --rm \
 | Azure docs | `https://learn.microsoft.com/en-us/azure/...` |
 | SQL Server docs | `https://learn.microsoft.com/en-us/sql/...` |
 | PowerShell docs | `https://learn.microsoft.com/en-us/powershell/...` |
+
+Course URLs use the Microsoft Learn Catalog to resolve the self-paced study guide. Modules without downloadable sources are listed with links to Microsoft Learn.
 
 ## Content License & Legal Notice
 

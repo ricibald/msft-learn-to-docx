@@ -18,6 +18,20 @@ public sealed class LearnCatalogClient
         _http = http;
     }
 
+    public async Task<CatalogCourse> GetCourseAsync(string courseSlug)
+    {
+        var uid = $"course.{courseSlug.ToLowerInvariant()}";
+        var url = $"{BaseUrl}?uid={Uri.EscapeDataString(uid)}&type=courses";
+        var json = await _http.GetStringAsync(url);
+        var response = JsonSerializer.Deserialize<CatalogCourseResponse>(json, new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true
+        });
+
+        return response?.Courses?.FirstOrDefault(c => string.Equals(c.Uid, uid, StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException($"Course not found in Learn Catalog: {uid}");
+    }
+
     /// <summary>
     /// Gets module metadata from the Catalog API.
     /// Returns the module URL (used to derive the GitHub directory name).

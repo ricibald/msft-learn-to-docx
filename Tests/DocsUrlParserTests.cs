@@ -12,6 +12,9 @@ public class DocsUrlParserTests
     [InlineData("https://learn.microsoft.com/en-us/training/paths/copilot/", "paths", "copilot")]
     [InlineData("https://learn.microsoft.com/training/modules/introduction-to-github-copilot/", "modules", "introduction-to-github-copilot")]
     [InlineData("https://learn.microsoft.com/fr-fr/training/paths/some-path/", "paths", "some-path")]
+    [InlineData("https://learn.microsoft.com/en-us/training/courses/ab-731t00", "courses", "ab-731t00")]
+    [InlineData("https://learn.microsoft.com/training/courses/AB-731T00/?wt=test#course-syllabus", "courses", "AB-731T00")]
+    [InlineData("https://learn.microsoft.com/en-us/modules/some-module/1-introduction", "modules", "some-module")]
     public void Parse_LearnTrainingUrl_ExtractsTypeAndSlug(string url, string expectedType, string expectedSlug)
     {
         var result = DocsUrlParser.Parse(url);
@@ -169,5 +172,13 @@ public class DocsUrlParserTests
     {
         Assert.Throws<ArgumentException>(() =>
             DocsUrlParser.Parse("not-a-url"));
+    }
+
+    [Theory]
+    [InlineData("https://example.com/training/courses/ab-731t00")]
+    [InlineData("https://learn.microsoft.com/en-us/training/courses/")]
+    public void Parse_InvalidCourseUrl_Throws(string url)
+    {
+        Assert.Throws<ArgumentException>(() => DocsUrlParser.Parse(url));
     }
 }

@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using YamlDotNet.Serialization;
 
 namespace MsftLearnToDocx.Models;
@@ -173,6 +174,26 @@ public class QuizChoice
 }
 
 // --- Catalog API models ---
+
+public class CatalogCourseResponse
+{
+    public List<CatalogCourse> Courses { get; set; } = [];
+}
+
+public class CatalogCourse
+{
+    public string Uid { get; set; } = "";
+    public string Title { get; set; } = "";
+
+    [JsonPropertyName("study_guide")]
+    public List<CatalogStudyGuideEntry>? StudyGuide { get; set; }
+}
+
+public class CatalogStudyGuideEntry
+{
+    public string Uid { get; set; } = "";
+    public string Type { get; set; } = "";
+}
 
 public class CatalogModuleResponse
 {
